@@ -1,0 +1,2 @@
+/usr/bin/ar qc libmylib.a CMakeFiles/mylib.dir/src/Traversability.cpp.o CMakeFiles/mylib.dir/src/Ransac.cpp.o CMakeFiles/mylib.dir/src/MapCreator.cpp.o
+/usr/bin/ranlib libmylib.a
