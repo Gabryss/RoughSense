@@ -99,6 +99,8 @@ void ROSWrapper::lookupTransform()
     } 
     catch (const tf2::TransformException & ex) {
       RCLCPP_WARN(this->get_logger(), "Could not transform 'odom' to 'base_link': %s", ex.what());
+      RCLCPP_WARN(this->get_logger(), "Is the TF topic properly published|filled ?");
+
     }
   }
 
