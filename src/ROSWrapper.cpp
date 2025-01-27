@@ -29,10 +29,11 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
       std::bind(&ROSWrapper::lookupTransform, this)
     );
 
+    // Point cloud
 
     // Subscribe to the point cloud topic    
     sub_pc_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-     p["input_topic"].GetString(), 10, std::bind(&ROSWrapper::pc_callback, this, _1));
+     p["pc_topic"].GetString(), 10, std::bind(&ROSWrapper::pc_callback, this, _1));
     
 
     // Create publishers
@@ -47,6 +48,14 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     roughness.roughness_shift=p["roughness_shift"].GetFloat();
     roughness.height=p["height"].GetInt();
     roughness.low_grid_resolution=p["map_low_resolution_division_factor"].GetInt();
+
+
+
+    // IMU
+    // Subscribe to the point cloud topic    
+    sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
+     p["imu_topic"].GetString(), 10, std::bind(&ROSWrapper::imu_callback, this, _1));
+
 };
 
 ROSWrapper::~ROSWrapper() 
@@ -63,7 +72,8 @@ void ROSWrapper::pc_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 
 void ROSWrapper::imu_callback(const sensor_msgs::msg::Imu &msg)
 {
-
+    // Publish data (development only)
+    RCLCPP_INFO(this->get_logger(), "What %.3f",msg.linear_acceleration.x);
 };
 
 void ROSWrapper::lookupTransform()

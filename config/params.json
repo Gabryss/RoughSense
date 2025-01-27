@@ -1,5 +1,5 @@
 {
-    "input_topic": "/cloud_map",
+    "pc_topic": "/cloud_map",
     "tf_topic":"/tf",
     "height":1,
 
@@ -13,5 +13,8 @@
     "roughness_frame_id":"map",
     "roughness_topic": "/roughness_costmap",
     "roughness_threshold": 0.2,
-    "roughness_shift":0.003
+    "roughness_shift":0.003,
+
+
+    "imu_topic": "/livox/imu"
 }
