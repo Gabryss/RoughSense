@@ -46,6 +46,7 @@
 
 // Custom library
 #include "Roughness.hpp"
+#include "Filter.hpp"
 
 
 using std::placeholders::_1;
@@ -61,6 +62,9 @@ class ROSWrapper : public rclcpp::Node
         void imu_callback(const sensor_msgs::msg::Imu &msg);
 
         void publish_roughness_map(const Mat &image, float resolution, float size);
+        std::vector<double> b = {0.95654368, -7.29004346, 24.59047794, -48.75218652, 60.51090319, -48.75218652, 24.59047794, -7.29004346, 0.95654368};
+        std::vector<double> a = {1.0, -7.512191, 25.66782538, -49.0144187, 60.48563302, -48.47511596, 23.5183952, -6.97042531, 0.80048889};
+
 
     protected:
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_pc_;
@@ -71,6 +75,9 @@ class ROSWrapper : public rclcpp::Node
         std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
         geometry_msgs::msg::TransformStamped transform_stamped;
         Roughness roughness;
+        // BandStopFilter filter;
+        std::shared_ptr<BandStopFilter> filter_;
+
         // Initialize PCL pointcloud
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloud;
 

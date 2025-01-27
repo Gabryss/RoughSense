@@ -250,30 +250,6 @@ void Roughness::DisplayGrid()
 
 
 
-// Apply filter to a single sample
-double Roughness::IIRfilter(double input) 
-{
-    // Update input history
-    inputHistory.push_front(input);
-    inputHistory.pop_back();
-
-    // Compute the output
-    double output = 0.0;
-    for (size_t i = 0; i < feedforward_coefficients.size(); ++i) {
-        output += feedforward_coefficients[i] * inputHistory[i];
-    }
-    for (size_t i = 1; i < feedback_coefficients.size(); ++i) {  // Skip a[0], as it's always 1.0
-        output -= feedback_coefficients[i] * outputHistory[i];
-    }
-
-    // Update output history
-    outputHistory.push_front(output);
-    outputHistory.pop_back();
-
-    return output;
-};
-
-
 // Function to calculate the norm of a 3D vector
 double Roughness::calculateNorm(double linear_accel_x, double linear_accel_y, double linear_accel_z) {
     return std::sqrt(linear_accel_x * linear_accel_x +

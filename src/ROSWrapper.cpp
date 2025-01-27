@@ -53,6 +53,9 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
 
     // IMU
     // Subscribe to the point cloud topic    
+    // Create the band-stop filter
+    filter_ = std::make_shared<BandStopFilter>();
+    filter_->initialize(b,a);
     sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
      p["imu_topic"].GetString(), 10, std::bind(&ROSWrapper::imu_callback, this, _1));
 
@@ -72,8 +75,19 @@ void ROSWrapper::pc_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 
 void ROSWrapper::imu_callback(const sensor_msgs::msg::Imu &msg)
 {
+
+    // Calculate the norm of the linear acceleration vector
+    double norm = roughness.calculateNorm(msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z);
+
+
+    // Filter the norm to exclude the rover's resonnancy frequencies
+    double filtered_data = filter_->filterSample(norm);
+
+
     // Publish data (development only)
-    RCLCPP_INFO(this->get_logger(), "What %.3f",msg.linear_acceleration.x);
+    RCLCPP_INFO(this->get_logger(), "Norm: %.3f Filtered data: %.3f", norm, filtered_data);
+
+
 };
 
 void ROSWrapper::lookupTransform()

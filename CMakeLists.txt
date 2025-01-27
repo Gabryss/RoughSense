@@ -26,11 +26,6 @@ find_package(pcl_conversions REQUIRED)
 
 # Import OpenCV library
 find_package(OpenCV REQUIRED)
-# find_package(FFTW3 REQUIRED)
-
-# Set paths for FFTW
-set(FFTW3_INCLUDE_DIR "/usr/include") # Path to fftw3.h
-set(FFTW3_LIBRARY "/usr/lib/x86_64-linux-gnu/libfftw3.so") # Path to libfftw3.so
 
 
 include_directories(
@@ -38,7 +33,6 @@ include_directories(
                     include/RoughSense
                     ${PCL_INCLUDE_DIRS} 
                     ${OpenCV_INCLUDE_DIRS}
-                    ${FFTW3_INCLUDE_DIR}
                     )
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
@@ -49,6 +43,8 @@ add_definitions(${PCL_DEFINITIONS})
 add_library(Roughness src/Roughness.cpp)
 add_library(Ransac src/Ransac.cpp)
 add_library(MapCreator src/MapCreator.cpp)
+add_library(Filter src/Filter.cpp)
+
 
 add_executable(roughness_node src/ROSWrapper.cpp)
 ament_target_dependencies(roughness_node rclcpp tf2 tf2_ros sensor_msgs nav2_msgs std_msgs pcl_conversions)
@@ -59,10 +55,10 @@ target_link_libraries(roughness_node
   ${PCL_LIBRARIES}
   ${OpenCV_LIBS}
   ${Boost_SYSTEM_LIBRARY}
-  ${FFTW3_LIBRARY}
   Roughness
   Ransac
   MapCreator
+  Filter
 )
 
 #Find the executable name
