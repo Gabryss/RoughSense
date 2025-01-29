@@ -47,7 +47,7 @@
 // Custom library
 #include "Roughness.hpp"
 #include "Filter.hpp"
-
+#include "Dsp.hpp"
 
 using std::placeholders::_1;
 using namespace std::chrono_literals;
@@ -77,6 +77,7 @@ class ROSWrapper : public rclcpp::Node
         Roughness roughness;
         // BandStopFilter filter;
         std::shared_ptr<BandStopFilter> filter_;
+        std::shared_ptr<Dsp> DSP_;
 
         // Initialize PCL pointcloud
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloud;

@@ -1,5 +1,5 @@
 /**
- * @file filter.cpp
+ * @file Filter.cpp
  * @author gabriel.garcia@uni.lu
  * @version 0.1
  * @date 2025-01-26

@@ -44,6 +44,8 @@ add_library(Roughness src/Roughness.cpp)
 add_library(Ransac src/Ransac.cpp)
 add_library(MapCreator src/MapCreator.cpp)
 add_library(Filter src/Filter.cpp)
+add_library(Dsp src/Dsp.cpp)
+
 
 
 add_executable(roughness_node src/ROSWrapper.cpp)
@@ -59,6 +61,7 @@ target_link_libraries(roughness_node
   Ransac
   MapCreator
   Filter
+  Dsp
 )
 
 #Find the executable name

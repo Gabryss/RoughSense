@@ -1,5 +1,5 @@
 /**
- * @file filter.hpp
+ * @file Filter.hpp
  * @author gabriel.garcia@uni.lu
  * @version 0.1
  * @date 2025-01-26
@@ -13,6 +13,7 @@
 #include <deque>
 #include <cmath>
 #include <stdexcept>
+
 
 
 class BandStopFilter {
