@@ -24,10 +24,10 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-    timer_ = this->create_wall_timer(
-      std::chrono::milliseconds(100),  // Call every 100 ms
-      std::bind(&ROSWrapper::lookupTransform, this)
-    );
+    // timer_ = this->create_wall_timer(
+    //   std::chrono::milliseconds(100),  // Call every 100 ms
+    //   std::bind(&ROSWrapper::lookupTransform, this)
+    // );
 
     // Point cloud
 
@@ -55,7 +55,12 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     // Subscribe to the point cloud topic    
     // Create the band-stop filter
     DSP_ = std::make_shared<Dsp>();
-    DSP_->computeBandstopCoefficients();
+    // DSP_->computeBandstopCoefficients();
+    RCLCPP_INFO(rclcpp::get_logger("roughness_node"), "Coefficients before normalization:");
+    RCLCPP_INFO(rclcpp::get_logger("roughness_node"), "b: [%Lf, %Lf, %Lf]", DSP_->b[0], DSP_->b[1], DSP_->b[2]);
+    RCLCPP_INFO(rclcpp::get_logger("roughness_node"), "a: [%Lf, %Lf, %Lf]", DSP_->a[0], DSP_->a[1], DSP_->a[2]);
+
+    // this->simulate_sinusoid_signal();
     sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
      p["imu_topic"].GetString(), 10, std::bind(&ROSWrapper::imu_callback, this, _1));
 
@@ -63,7 +68,7 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
 
 ROSWrapper::~ROSWrapper() 
 {
-
+  save_filtered_data();
 };
 
 void ROSWrapper::pc_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
@@ -78,10 +83,13 @@ void ROSWrapper::imu_callback(const sensor_msgs::msg::Imu &msg)
 
     // Calculate the norm of the linear acceleration vector
     double norm = roughness.calculateNorm(msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z);
+    this->rawData.push_back(norm);
 
 
     // Filter the norm to exclude the rover's resonnancy frequencies
     double filtered_data = DSP_->processSample(norm);
+    this->filteredData.push_back(filtered_data);
+
 
     // Update window
     DSP_->std_update(filtered_data);
@@ -93,6 +101,40 @@ void ROSWrapper::imu_callback(const sensor_msgs::msg::Imu &msg)
     RCLCPP_INFO(this->get_logger(), "Norm: %.3f Filtered data: %.3f, Roughness: %.3f", norm, filtered_data, roughness);
 
 
+};
+
+
+void ROSWrapper::simulate_sinusoid_signal()
+{
+  RCLCPP_INFO(this->get_logger(), "Entering fake data");
+  DSP_->generate_simulated_signal();
+  RCLCPP_INFO(this->get_logger(), "Size of generated data: %.3ld", DSP_->sinusoid.size());
+
+  for(int i=0; i<DSP_->sinusoid.size(); i++)
+  {
+    double filtered_data = DSP_->processSample(DSP_->sinusoid[i]);
+    this->filteredData.push_back(filtered_data);
+    RCLCPP_INFO(this->get_logger(), "Data: %.3f Filtered data: %.3f", DSP_->sinusoid[i], filtered_data);
+  }
+
+  // Open an output file stream (CSV file).
+  std::ofstream outFile("data.csv");
+  if (!outFile.is_open()) 
+  {
+      std::cerr << "Error opening file for writing!" << std::endl;
+  }
+
+  // Write a header row (optional).
+  outFile << "Index,Raw,Filtered\n";
+
+  // Write data row by row.
+  for (size_t i = 0; i < DSP_->sinusoid.size(); i++) 
+  {
+      outFile << i << "," << DSP_->sinusoid[i] << "," << this->filteredData[i] << "\n";
+  }
+
+  outFile.close();
+  std::cout << "Data exported to data.csv" << std::endl;
 };
 
 void ROSWrapper::lookupTransform()
@@ -183,6 +225,31 @@ void ROSWrapper::get_parameters(std::string parameters_path)
   
     // Close the file 
     fclose(fp); 
+};
+
+
+// Save the filtered data
+void ROSWrapper::save_filtered_data()
+{
+  // Open an output file stream (CSV file).
+  std::ofstream outFile("data_exp.csv");
+  if (!outFile.is_open()) 
+  {
+      RCLCPP_ERROR(this->get_logger(), "Error opening file for writing.");
+      return;
+  }
+
+  // Write a header row (optional).
+  outFile << "Index,Raw,Filtered\n";
+
+  // Write data row by row.
+  for (size_t i = 0; i < this->rawData.size(); i++) 
+  {
+      outFile << i << "," << this->rawData[i] << "," << this->filteredData[i] << "\n";
+  }
+
+  outFile.close();
+  RCLCPP_INFO(this->get_logger(), "Filtered data saved to filtered_data.csv");
 };
 
 

@@ -10,6 +10,7 @@
  */
 #include <memory>
 #include "iostream"
+#include <fstream>
 #include <string>
 #include <stdio.h>
 #include <iterator>
@@ -62,8 +63,13 @@ class ROSWrapper : public rclcpp::Node
         void imu_callback(const sensor_msgs::msg::Imu &msg);
 
         void publish_roughness_map(const Mat &image, float resolution, float size);
-        std::vector<double> b = {0.95654368, -7.29004346, 24.59047794, -48.75218652, 60.51090319, -48.75218652, 24.59047794, -7.29004346, 0.95654368};
-        std::vector<double> a = {1.0, -7.512191, 25.66782538, -49.0144187, 60.48563302, -48.47511596, 23.5183952, -6.97042531, 0.80048889};
+        // std::vector<double> b = {0.95654368, -7.29004346, 24.59047794, -48.75218652, 60.51090319, -48.75218652, 24.59047794, -7.29004346, 0.95654368};
+        // std::vector<double> a = {1.0, -7.512191, 25.66782538, -49.0144187, 60.48563302, -48.47511596, 23.5183952, -6.97042531, 0.80048889};
+        void simulate_sinusoid_signal();
+        vector<double> filteredData;
+        vector<double> rawData;
+        void save_filtered_data();
+
 
 
     protected:
