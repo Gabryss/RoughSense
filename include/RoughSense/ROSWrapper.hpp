@@ -45,6 +45,10 @@
 // OPENCV
 #include <opencv2/opencv.hpp>
 
+
+// Liquid-DSP
+#include <liquid/liquid.h>
+
 // Custom library
 #include "Roughness.hpp"
 #include "Filter.hpp"
@@ -91,6 +95,15 @@ class ROSWrapper : public rclcpp::Node
         rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr pub_roughness_;
         
         rapidjson::Document p; 
+
+        // Number of pass
+        int number_pass = 2;
+        double filtered_data;
+
+        // Liquid-DSP filter object (pointer type defined by Liquid-DSP)
+        iirfilt_crcf _filter {nullptr};
+        
+
 
         void get_parameters(std::string parameters_path);
         void lookupTransform();

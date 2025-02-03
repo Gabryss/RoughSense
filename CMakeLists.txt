@@ -13,6 +13,7 @@ add_compile_options(-std=c++14 -O0 -g -ggdb)
 
 # Import ROS related packages
 find_package(ament_cmake REQUIRED)
+find_package(PkgConfig REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -27,12 +28,21 @@ find_package(pcl_conversions REQUIRED)
 # Import OpenCV library
 find_package(OpenCV REQUIRED)
 
+# Manually set Liquid-DSP include directory and library
+# Adjust these paths if they differ on your system.
+set(LIQUID_INCLUDE_DIRS "/usr/include/liquid")
+set(LIQUID_LIBRARIES "/usr/lib/x86_64-linux-gnu/libliquid.so")
+
+# Optionally print Liquid-DSP info for debugging
+message(STATUS "Liquid-DSP include dirs: ${LIQUID_INCLUDE_DIRS}")
+message(STATUS "Liquid-DSP libraries: ${LIQUID_LIBRARIES}")
 
 include_directories(
                     include
                     include/RoughSense
                     ${PCL_INCLUDE_DIRS} 
                     ${OpenCV_INCLUDE_DIRS}
+                    ${LIQUID_INCLUDE_DIRS}
                     )
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
@@ -57,6 +67,7 @@ target_link_libraries(roughness_node
   ${PCL_LIBRARIES}
   ${OpenCV_LIBS}
   ${Boost_SYSTEM_LIBRARY}
+  ${LIQUID_LIBRARIES}
   Roughness
   Ransac
   MapCreator
