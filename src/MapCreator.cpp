@@ -15,7 +15,7 @@
 // =====================================================
 // Create traversability map
 // =====================================================
-Mat MapCreator::MakeMap(vector<vector<vector<float>>>& input_grid, int input_depth)
+Mat MapCreator::MakeMap(vector<vector<vector<double>>>& input_grid, int input_depth)
 {
     Grid = input_grid;
     depth = input_depth;

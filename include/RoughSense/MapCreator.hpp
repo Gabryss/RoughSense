@@ -26,14 +26,14 @@ class MapCreator
         int cols;                               // Number of columns in the grid
         int depth;                              // Depth to look at in the maatrix
         float max_value;                        // Max value of the matrix (for normalization)
-        vector<vector<vector<float>>> Grid;     // Input grid
+        vector<vector<vector<double>>> Grid;     // Input grid
         Mat image;
 
 
         // ===========================
         // Methods
         // ===========================
-        Mat MakeMap(vector<vector<vector<float>>>& Grid, int input_depth);                         // Create and save the map
+        Mat MakeMap(vector<vector<vector<double>>>& Grid, int input_depth);                         // Create and save the map
 
     protected:
         // ===========================
