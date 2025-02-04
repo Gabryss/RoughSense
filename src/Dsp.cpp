@@ -34,7 +34,7 @@ void Dsp::create_filter(float f_center_p, float bandwidth_p, float fs_p)
     // =====================================================
     // float f_center  = 27.5f;   // Desired center frequency (notch center)
     // float bandwidth = 5.0f;    // Desired bandwidth of the notch
-    // float fs        = 400.0f;  // Sampling frequency
+    // float fs        = 400.0f;  // Sampling frequency (2 times the signal's frequency)
 
     float f_center = f_center_p;    // Desired center frequency (notch center)
     float bandwidth = bandwidth_p;  // Desired bandwidth of the notch
@@ -69,30 +69,24 @@ void Dsp::create_filter(float f_center_p, float bandwidth_p, float fs_p)
     // =====================================================
     // Compute normalized frequencies (0 to 1; 1 corresponds to Nyquist)
     // =====================================================
-    float fc_norm = f_low / nyquist;   // Normalized cutoff (lower edge) frequency
-    float f0_norm = f_center / nyquist;  // Normalized center frequency
+    float fc_norm = f_low / nyquist;        // Normalized cutoff (lower edge) frequency
+    float f0_norm = f_center / nyquist;     // Normalized center frequency
 
     cout << "Normalized lower edge (fc_norm): " << fc_norm << "\n";
     cout << "Normalized center frequency (f0_norm): " << f0_norm << "\n";
 
-    // =====================================================
-    // Filter design parameters
-    // =====================================================
-    unsigned int order = 4;   // Filter order
-    float Ap = 1.0f;          // Passband ripple in dB
-    float As = 40.0f;         // Stopband attenuation in dB
 
     // Create the band-stop (notch) filter.
     // The prototype design interface will compute the necessary second-order sections.
     _filter = iirfilt_crcf_create_prototype(
-      LIQUID_IIRDES_BUTTER,    // analog prototype type (Butterworth)
-      LIQUID_IIRDES_BANDSTOP,  // filter type: band-stop (notch)
-      LIQUID_IIRDES_SOS,       // design format: use second-order sections
-      order,
-      fc_norm,                      // cutoff frequency
-      f0_norm,                      // notch (center) frequency
-      Ap,
-      As
+      LIQUID_IIRDES_BUTTER,                 // Analog prototype type (Butterworth)
+      LIQUID_IIRDES_BANDSTOP,               // Filter type: band-stop (notch)
+      LIQUID_IIRDES_SOS,                    // Design format: use second-order sections
+      order,                                // Filter's order
+      fc_norm,                              // Cutoff frequency
+      f0_norm,                              // Notch (center) frequency
+      Ap,                                   // Passband ripple in dB
+      As                                    // Stopband attenuation in dB
     );
 
     if (!_filter) {
@@ -107,37 +101,6 @@ void Dsp::process_sample(complex<float> input, complex<float> *output)
     // Execute one filtering iteration.
     iirfilt_crcf_execute(_filter, input, output);
 };
-
-
-// =====================================================
-// STD
-// =====================================================
-
-// Update the window of the standard deviation
-void Dsp::std_update(double x)
-{
-    if (window.size() == window_size) {
-            window.pop_front();  // Remove the oldest value
-        }
-        window.push_back(x);
-};
-
-
-// Compute the STD and get the result giving the current window
-double Dsp::get_std() const 
-{
-    if (window.size() < 2) return 0.0;
-
-    double mean = accumulate(window.begin(), window.end(), 0.0) / window.size();
-    double variance = 0.0;
-    
-    for (double x : window) {
-        variance += (x - mean) * (x - mean);
-    }
-    variance /= (window.size() - 1);
-    return sqrt(variance);
-}
-
 
 // =====================================================
 // TOOLS

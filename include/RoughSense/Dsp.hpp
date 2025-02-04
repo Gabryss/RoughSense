@@ -46,8 +46,6 @@ class Dsp {
         // ===========================
         // Methods
         // ===========================
-        void std_update(double x);
-        double get_std() const;
         void create_filter(float f_center_p, float bandwidth_p, float fs_p);
         void process_sample(complex<float> input, complex<float> *output);
         void generate_simulated_signal();
@@ -57,6 +55,9 @@ class Dsp {
         // ===========================
         // Attributes
         // ===========================
-        deque<double> window;
-        int window_size = 3;
+
+        // Filter design parameters
+        unsigned int order = 4;   // Filter order
+        float Ap = 1.0f;          // Passband ripple in dB
+        float As = 40.0f;         // Stopband attenuation in dB
 };
