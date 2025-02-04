@@ -19,6 +19,9 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     this->declare_parameter("param_path", "");
     std::string path_parameters = this->get_parameter("param_path").as_string();
     get_parameters(path_parameters);
+    debug_info = p["debug_info"].GetBool();
+    debug_time_s = p["debug_time_s"].GetInt();
+
 
 
     // =====================================================
@@ -29,7 +32,7 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     timer_ = this->create_wall_timer(
-      std::chrono::milliseconds(100),  // Call every 100 ms
+      std::chrono::milliseconds(200),  // Call every 200 ms
       std::bind(&ROSWrapper::lookupTransform, this)
     );
 
@@ -61,19 +64,24 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     // =====================================================
     // IMU
     // =====================================================
-
+    imu_sampling_frequency = p["imu_sampling_frequency"].GetFloat();
+    imu_filter_frequency = p["imu_filter_frequency"].GetFloat();
+    imu_filter_bandwidth = p["imu_filter_bandwidth"].GetFloat();
     DSP_ = std::make_shared<Dsp>();
-    DSP_->create_filter(27.5f, 5.0f, 200);
+    DSP_->create_filter(imu_filter_frequency, imu_filter_bandwidth, imu_sampling_frequency);
 
     // this->simulate_sinusoid_signal();    // Debug only
     sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
      p["imu_topic"].GetString(), 10, std::bind(&ROSWrapper::imu_callback, this, _1));
-
 };
+
 
 ROSWrapper::~ROSWrapper() 
 {
-  save_filtered_data();
+  if(debug_info)
+  {
+    save_filtered_data();
+  }
 };
 
 
@@ -92,16 +100,14 @@ void ROSWrapper::pc_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 
 void ROSWrapper::imu_callback(const sensor_msgs::msg::Imu &msg)
 {
-
+    
     // Calculate the norm of the linear acceleration vector
     double norm = roughness.calculateNorm(msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z);
     this->rawData.push_back(norm);
 
-
+    // Initialize filtered variable
     complex<float> input(norm, 0.0f);
-    
     complex<float> filtered_data;
-
       
     // Execute one filtering iteration.
     DSP_->process_sample(input, &filtered_data);
@@ -109,13 +115,13 @@ void ROSWrapper::imu_callback(const sensor_msgs::msg::Imu &msg)
     this->filteredData.push_back(filtered_data.real());
 
     // Update window
-    DSP_->std_update(filtered_data.real());
+    this->update_window_imu(filtered_data.real());
 
-    // STD
-    double roughness = DSP_->get_std();
-
-    // Publish data (development only)
-    RCLCPP_INFO(this->get_logger(), "Norm: %.3f Filtered data: %.3f, Roughness: %.3f", norm, filtered_data.real(), roughness);
+    // Publish data (debug only)
+    if (debug_info)
+    {
+      RCLCPP_INFO(this->get_logger(), "Norm: %.3f Filtered data: %.3f", norm, filtered_data.real());
+    }
 };
 
 
@@ -130,7 +136,14 @@ void ROSWrapper::lookupTransform()
       // Lookup transform from 'odom' to 'base_link'
       transform_stamped = tf_buffer_->lookupTransform("map", "base_footprint", tf2::TimePointZero);
       roughness.pose = {transform_stamped.transform.translation.x, transform_stamped.transform.translation.y, transform_stamped.transform.translation.z};
+      RCLCPP_INFO(this->get_logger(), "Pose X: %.3f Pose Y: %.3f Pose Z: %.3f", roughness.pose[0], roughness.pose[1], roughness.pose[2]);
 
+
+      // Calculate the IMU roughness
+      vector<double> window_imu_vector = convert_deque_vector(window_imu);
+      double roughness_imu = roughness.CalculateStd(window_imu_vector);
+
+      // Calculate the point cloud roughness
       if(cloud->size()>0)
       {
         roughness.CalculatePCRoughness(cloud);
@@ -146,11 +159,18 @@ void ROSWrapper::lookupTransform()
       }
     } 
     catch (const tf2::TransformException & ex) {
-      RCLCPP_WARN(this->get_logger(), "Could not transform 'odom' to 'base_link': %s", ex.what());
-      RCLCPP_WARN(this->get_logger(), "Is the TF topic properly published|filled ?");
-
+      if ((temp_timer>=debug_time_s*5) && debug_info)
+      {
+        temp_timer = 0;
+        RCLCPP_WARN(this->get_logger(), "Could not transform 'odom' to 'base_link': %s", ex.what());
+        RCLCPP_WARN(this->get_logger(), "Is the TF topic properly published|filled ?");
+      }
+      else
+      {
+        temp_timer +=1;
+      }
     }
-  }
+  };
 
 
 
@@ -200,9 +220,6 @@ void ROSWrapper::publish_roughness_map(const Mat &image, float resolution, float
 
 
 
-
-
-
 // =====================================================
 // TOOLS
 // =====================================================
@@ -210,7 +227,7 @@ void ROSWrapper::publish_roughness_map(const Mat &image, float resolution, float
 // Generate sinusoid signal for IMU debug 
 void ROSWrapper::simulate_sinusoid_signal()
 {
-  RCLCPP_INFO(this->get_logger(), "Entering fake data");
+  RCLCPP_INFO(this->get_logger(), "Generating simulated data");
   DSP_->generate_simulated_signal();
   RCLCPP_INFO(this->get_logger(), "Size of generated data: %.3ld", DSP_->sinusoid.size());
 
@@ -244,6 +261,16 @@ void ROSWrapper::simulate_sinusoid_signal()
 
   outFile.close();
   std::cout << "Data exported to data.csv" << std::endl;
+};
+
+
+// Update the sliding window with new IMU data 
+void ROSWrapper::update_window_imu(double x)
+{
+    if (window_imu.size() == window_size) {
+            window_imu.pop_front();  // Remove the oldest value
+        }
+        window_imu.push_back(x);
 };
 
 
@@ -294,7 +321,18 @@ void ROSWrapper::save_filtered_data()
 };
 
 
+// Convert a deque of double into a vector of double
+vector<double> ROSWrapper::convert_deque_vector(deque<double> input)
+{
+  // Create a vector of floats with the same size as imuData
+  vector<double> output(input.size());
 
+  // Convert each double to double using transform
+  transform(input.begin(), input.end(), output.begin(),
+                  [](double d) { return static_cast<double>(d); });
+  
+  return output;
+};
 
 
 

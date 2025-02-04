@@ -19,7 +19,9 @@
 #include <functional>
 #include <boost/make_shared.hpp>
 #include "rapidjson/document.h"
-#include "rapidjson/filereadstream.h" 
+#include "rapidjson/filereadstream.h"
+#include <deque>
+
 
 //ROS
 #include <rclcpp/rclcpp.hpp>
@@ -65,6 +67,7 @@ class ROSWrapper : public rclcpp::Node
         // ===========================
         vector<double> filteredData;
         vector<double> rawData;
+        
 
         // ===========================
         // Methods
@@ -96,17 +99,27 @@ class ROSWrapper : public rclcpp::Node
 
         // Notch bandstop filter;
         std::shared_ptr<Dsp> DSP_;
+        float imu_filter_bandwidth;
+        float imu_filter_frequency;
+        float imu_sampling_frequency;
 
         // Initialize PCL pointcloud
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloud;        
 
-        // Config file reader
-        rapidjson::Document p; 
-
+        // General parameters
+        rapidjson::Document p;      // Config file reader
+        bool debug_info;    
+        int window_size = 3;        // Amount of stored data in the window
+        deque<double> window_imu;   // IMU window
+        int debug_time_s;           // In seconds
+        int temp_timer = 0;
         
         // ===========================
         // Methods
         // ===========================
         void get_parameters(std::string parameters_path);
         void lookupTransform();
+        void update_window_imu(double x);
+        vector<double> convert_deque_vector(deque<double> input);
+
 };
