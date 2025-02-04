@@ -53,7 +53,6 @@ add_definitions(${PCL_DEFINITIONS})
 add_library(Roughness src/Roughness.cpp)
 add_library(Ransac src/Ransac.cpp)
 add_library(MapCreator src/MapCreator.cpp)
-add_library(Filter src/Filter.cpp)
 add_library(Dsp src/Dsp.cpp)
 
 
@@ -71,7 +70,6 @@ target_link_libraries(roughness_node
   Roughness
   Ransac
   MapCreator
-  Filter
   Dsp
 )
 

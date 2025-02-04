@@ -25,6 +25,10 @@ class RansacAlgorithm
     public:
         RansacAlgorithm() {};           
         ~RansacAlgorithm() {};
+
+        // ===========================
+        // Attributes
+        // ===========================
         int t;                           // Threshold value to evaluate algorithm performance (inliners)
         int k=100;                       // Number of iterations allowed in the algorithm
 
@@ -33,10 +37,18 @@ class RansacAlgorithm
         vector<float> temp_distances;    // Temp distance vector
         
         vector<float> bestFit;           // Model parameters
+
+
+        // ===========================
+        // Methods
+        // ===========================
         void FitPlane(int t, vector<pcl::PointXYZI>& data, vector<float>& bestFit);
         void ResetState();
 
     protected:
+        // ===========================
+        // Methods
+        // ===========================
         vector<float> PlaneEquation(const pcl::PointXYZI& p1, const pcl::PointXYZI& p2, const pcl::PointXYZI& p3);
         float CalculateDistanceFromPlane(const pcl::PointXYZI& points, const vector<float>& plane_eq);
         int CountInliers(vector<pcl::PointXYZI>& data, vector<float>& plane_eq, int t);

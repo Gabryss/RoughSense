@@ -11,6 +11,10 @@
 #include "Ransac.hpp"
 
 
+
+// =====================================================
+// Process Ransac on a pointcloud cell
+// =====================================================
 void RansacAlgorithm::FitPlane(int t, vector<pcl::PointXYZI>& data, vector<float>& bestFit)
 {
     int best_inliers = 0;
@@ -51,7 +55,6 @@ void RansacAlgorithm::FitPlane(int t, vector<pcl::PointXYZI>& data, vector<float
 };
 
 
-
 vector<float> RansacAlgorithm::PlaneEquation(const pcl::PointXYZI& p1, const pcl::PointXYZI& p2, const pcl::PointXYZI& p3)
 {
     // Calculate two vectors that lies on the plane we wish to calculate
@@ -78,6 +81,14 @@ vector<float> RansacAlgorithm::PlaneEquation(const pcl::PointXYZI& p1, const pcl
     return {A,B,C,D};
 };
 
+
+
+
+
+
+// =====================================================
+// TOOLS
+// =====================================================
 
 float RansacAlgorithm::CalculateDistanceFromPlane(const pcl::PointXYZI& point, const vector<float>& plane_eq)
 {

@@ -13,23 +13,31 @@
 
 ROSWrapper::ROSWrapper(): Node("roughness_node")
 {
-    // Get parameters
+    // =====================================================
+    // GET CONFIG PARAMETERS
+    // =====================================================
     this->declare_parameter("param_path", "");
     std::string path_parameters = this->get_parameter("param_path").as_string();
     get_parameters(path_parameters);
 
-    cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
 
+    // =====================================================
+    // TRANSFORM
+    // =====================================================
     // Get transform of the robot
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-    // timer_ = this->create_wall_timer(
-    //   std::chrono::milliseconds(100),  // Call every 100 ms
-    //   std::bind(&ROSWrapper::lookupTransform, this)
-    // );
+    timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(100),  // Call every 100 ms
+      std::bind(&ROSWrapper::lookupTransform, this)
+    );
 
-    // Point cloud
+
+    // =====================================================
+    // POINT CLOUD
+    // =====================================================
+    cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
 
     // Subscribe to the point cloud topic    
     sub_pc_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -50,12 +58,14 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     roughness.low_grid_resolution=p["map_low_resolution_division_factor"].GetInt();
 
 
-
+    // =====================================================
     // IMU
+    // =====================================================
+
     DSP_ = std::make_shared<Dsp>();
     DSP_->create_filter(27.5f, 5.0f, 200);
 
-    // this->simulate_sinusoid_signal();
+    // this->simulate_sinusoid_signal();    // Debug only
     sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
      p["imu_topic"].GetString(), 10, std::bind(&ROSWrapper::imu_callback, this, _1));
 
@@ -65,6 +75,13 @@ ROSWrapper::~ROSWrapper()
 {
   save_filtered_data();
 };
+
+
+
+
+// =====================================================
+// CALLBACKS
+// =====================================================
 
 void ROSWrapper::pc_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
@@ -80,78 +97,32 @@ void ROSWrapper::imu_callback(const sensor_msgs::msg::Imu &msg)
     double norm = roughness.calculateNorm(msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z);
     this->rawData.push_back(norm);
 
-    this->filtered_data = norm;
 
     complex<float> input(norm, 0.0f);
-    complex<float> output;
-
+    
+    complex<float> filtered_data;
 
       
-    // RCLCPP_INFO(rclcpp::get_logger("roughness_node"), "FILTERING");
-    // Filter the norm to exclude the rover's resonnancy frequencies
-    // this->filtered_data = DSP_->processSample(this->filtered_data);
-
     // Execute one filtering iteration.
-    // DSP_->iirfilt_crcf_execute(DSP_->_filter, input, &output);
-    DSP_->process_sample(input, &output);
-    
+    DSP_->process_sample(input, &filtered_data);
 
-    // Log the filtered output (here we print the real part).
-    RCLCPP_INFO(this->get_logger(), "Filtered sample: %f", output.real());
-
-    this->filteredData.push_back(output.real());
-    
+    this->filteredData.push_back(filtered_data.real());
 
     // Update window
-    DSP_->std_update(this->filtered_data);
+    DSP_->std_update(filtered_data.real());
 
     // STD
     double roughness = DSP_->get_std();
 
     // Publish data (development only)
-    RCLCPP_INFO(this->get_logger(), "Norm: %.3f Filtered data: %.3f, Roughness: %.3f", norm, filtered_data, roughness);
-
-
+    RCLCPP_INFO(this->get_logger(), "Norm: %.3f Filtered data: %.3f, Roughness: %.3f", norm, filtered_data.real(), roughness);
 };
 
 
-void ROSWrapper::simulate_sinusoid_signal()
-{
-  RCLCPP_INFO(this->get_logger(), "Entering fake data");
-  DSP_->generate_simulated_signal();
-  RCLCPP_INFO(this->get_logger(), "Size of generated data: %.3ld", DSP_->sinusoid.size());
 
-  for(int i=0; i<DSP_->sinusoid.size(); i++)
-  {
-    complex<float> input(DSP_->sinusoid[i], 0.0f);
-    complex<float> output;
-
-    DSP_->process_sample(input, &output);
-
-    // double filtered_data = DSP_->processSample(DSP_->sinusoid[i]);
-    this->filteredData.push_back(output.real());
-    RCLCPP_INFO(this->get_logger(), "Data: %.3f Filtered data: %.3f", DSP_->sinusoid[i], output.real());
-  }
-
-  // Open an output file stream (CSV file).
-  std::ofstream outFile("data.csv");
-  if (!outFile.is_open()) 
-  {
-      std::cerr << "Error opening file for writing!" << std::endl;
-  }
-
-  // Write a header row (optional).
-  outFile << "Index,Raw,Filtered\n";
-
-  // Write data row by row.
-  for (size_t i = 0; i < DSP_->sinusoid.size(); i++) 
-  {
-      outFile << i << "," << DSP_->sinusoid[i] << "," << this->filteredData[i] << "\n";
-  }
-
-  outFile.close();
-  std::cout << "Data exported to data.csv" << std::endl;
-};
+// =====================================================
+// TRANSFORM
+// =====================================================
 
 void ROSWrapper::lookupTransform()
 {
@@ -162,7 +133,7 @@ void ROSWrapper::lookupTransform()
 
       if(cloud->size()>0)
       {
-        roughness.CalculateRoughness(cloud);
+        roughness.CalculatePCRoughness(cloud);
         Mat image_roughness = roughness.image_roughness;
 
         float resolution = roughness.resolution;
@@ -181,6 +152,11 @@ void ROSWrapper::lookupTransform()
     }
   }
 
+
+
+// =====================================================
+// PUBLISHER
+// =====================================================
 
 void ROSWrapper::publish_roughness_map(const Mat &image, float resolution, float size)
 {
@@ -219,6 +195,55 @@ void ROSWrapper::publish_roughness_map(const Mat &image, float resolution, float
     occupancy_grid.data = static_map_cell_values;
 
     pub_roughness_->publish(occupancy_grid);
+};
+
+
+
+
+
+
+
+// =====================================================
+// TOOLS
+// =====================================================
+
+// Generate sinusoid signal for IMU debug 
+void ROSWrapper::simulate_sinusoid_signal()
+{
+  RCLCPP_INFO(this->get_logger(), "Entering fake data");
+  DSP_->generate_simulated_signal();
+  RCLCPP_INFO(this->get_logger(), "Size of generated data: %.3ld", DSP_->sinusoid.size());
+
+  for(int i=0; i<DSP_->sinusoid.size(); i++)
+  {
+    complex<float> input(DSP_->sinusoid[i], 0.0f);
+    complex<float> output;
+
+    DSP_->process_sample(input, &output);
+
+    // double filtered_data = DSP_->processSample(DSP_->sinusoid[i]);
+    this->filteredData.push_back(output.real());
+    RCLCPP_INFO(this->get_logger(), "Data: %.3f Filtered data: %.3f", DSP_->sinusoid[i], output.real());
+  }
+
+  // Open an output file stream (CSV file).
+  std::ofstream outFile("data.csv");
+  if (!outFile.is_open()) 
+  {
+      std::cerr << "Error opening file for writing!" << std::endl;
+  }
+
+  // Write a header row (optional).
+  outFile << "Index,Raw,Filtered\n";
+
+  // Write data row by row.
+  for (size_t i = 0; i < DSP_->sinusoid.size(); i++) 
+  {
+      outFile << i << "," << DSP_->sinusoid[i] << "," << this->filteredData[i] << "\n";
+  }
+
+  outFile.close();
+  std::cout << "Data exported to data.csv" << std::endl;
 };
 
 
@@ -267,6 +292,15 @@ void ROSWrapper::save_filtered_data()
   outFile.close();
   RCLCPP_INFO(this->get_logger(), "Filtered data saved to filtered_data.csv");
 };
+
+
+
+
+
+
+// =====================================================
+// MAIN
+// =====================================================
 
 
 int main(int argc, char * argv[])

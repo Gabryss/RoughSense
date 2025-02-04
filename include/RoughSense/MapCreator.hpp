@@ -19,18 +19,25 @@ using namespace cv;
 class MapCreator
 {
     public:
+        // ===========================
+        // Attributes
+        // ===========================
         int rows;                               // Number of rows in the grid
         int cols;                               // Number of columns in the grid
         int depth;                              // Depth to look at in the maatrix
         float max_value;                        // Max value of the matrix (for normalization)
         vector<vector<vector<float>>> Grid;     // Input grid
         Mat image;
-        
+
+
+        // ===========================
+        // Methods
+        // ===========================
         Mat MakeMap(vector<vector<vector<float>>>& Grid, int input_depth);                         // Create and save the map
-        Mat MakeMapRGB(vector<vector<vector<float>>>& Grid, int input_depth);                         // Create and save the map
 
     protected:
-        void getMaxValue();                     // Get the max value of the matrix (for normalization)
+        // ===========================
+        // Methods
+        // ===========================
         void saveMap(string path, Mat image);   // Save the map on the hard drive
-        cv::Vec3b hue2rgb(float);
 };

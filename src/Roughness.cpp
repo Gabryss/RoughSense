@@ -10,9 +10,11 @@
  */
 #include "Roughness.hpp"
 
-
-void Roughness::CalculateRoughness(pcl::PointCloud<pcl::PointXYZI>::Ptr Data_in)
-// Core method that call the other methods to calculate the Roughness
+// =====================================================
+// Main point cloud function
+// =====================================================
+void Roughness::CalculatePCRoughness(pcl::PointCloud<pcl::PointXYZI>::Ptr Data_in)
+// Core method that call the other methods to calculate the point cloud roughness
 {
     nb_cells = static_cast<unsigned int>(size/resolution);
 
@@ -26,20 +28,14 @@ void Roughness::CalculateRoughness(pcl::PointCloud<pcl::PointXYZI>::Ptr Data_in)
 };
 
 
-void Roughness::ImportPCD(string path)
-// Takes absolute path as an input, import a .pcd file and transform it into a PCL object
-{
-    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_in (new pcl::PointCloud<pcl::PointXYZI>);
 
-    cout<<"PCD path: "<<path<<endl;
 
-    if (pcl::io::loadPCDFile<pcl::PointXYZI> (path, *cloud_in) == -1) //* load the file
-    {
-        cout<<"Couldn't read file test_pcd.pcd"<<endl;
-    }
-    cout<<"Point cloud loaded from file"<<endl;
-    cloud = cloud_in;
-};
+// =====================================================
+// Process grids
+// =====================================================
+
+
+
 
 
 void Roughness::CreateTGrid(int nb_cells)
@@ -193,6 +189,13 @@ void Roughness::FillTGrid()
 };
 
 
+
+
+
+// =====================================================
+// STD
+// =====================================================
+
 float Roughness::CalculateStd(vector<float>& distances)
 {
     // Calculate mean
@@ -211,6 +214,22 @@ float Roughness::CalculateStd(vector<float>& distances)
 };
 
 
+
+
+
+// =====================================================
+// TOOLS
+// =====================================================
+
+// Function to calculate the norm of a 3D vector
+double Roughness::calculateNorm(double linear_accel_x, double linear_accel_y, double linear_accel_z) {
+    return std::sqrt(linear_accel_x * linear_accel_x +
+                     linear_accel_y * linear_accel_y +
+                     linear_accel_z * linear_accel_z);
+};
+
+
+// Normalize the values. (everything above the threshold get the LETHAL value).
 float Roughness::roughness_normalization(float value, float threshold)
 {
     // Normalize the roughness between 0 and 100
@@ -235,6 +254,7 @@ float Roughness::roughness_normalization(float value, float threshold)
 };
 
 
+// Display the roughness (traversability) grid in the terminal
 void Roughness::DisplayGrid()
 {
     for(long unsigned int ind_x=0; ind_x<TGrid.size(); ind_x++)
@@ -249,10 +269,20 @@ void Roughness::DisplayGrid()
 };
 
 
+// In case the user has a .pcd file. (Used for debug purposes)
+void Roughness::ImportPCD(string path)
+// Takes absolute path as an input, import a .pcd file and transform it into a PCL object
+{
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_in (new pcl::PointCloud<pcl::PointXYZI>);
 
-// Function to calculate the norm of a 3D vector
-double Roughness::calculateNorm(double linear_accel_x, double linear_accel_y, double linear_accel_z) {
-    return std::sqrt(linear_accel_x * linear_accel_x +
-                     linear_accel_y * linear_accel_y +
-                     linear_accel_z * linear_accel_z);
-}
+    cout<<"PCD path: "<<path<<endl;
+
+    if (pcl::io::loadPCDFile<pcl::PointXYZI> (path, *cloud_in) == -1) //* load the file
+    {
+        cout<<"Couldn't read file test_pcd.pcd"<<endl;
+    }
+    cout<<"Point cloud loaded from file"<<endl;
+    cloud = cloud_in;
+};
+
+

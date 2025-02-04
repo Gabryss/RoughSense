@@ -48,7 +48,6 @@
 
 // Custom library
 #include "Roughness.hpp"
-#include "Filter.hpp"
 #include "Dsp.hpp"
 
 using std::placeholders::_1;
@@ -60,44 +59,54 @@ class ROSWrapper : public rclcpp::Node
     public:
         ROSWrapper();
         ~ROSWrapper();
-        void pc_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-        void imu_callback(const sensor_msgs::msg::Imu &msg);
 
-        void publish_roughness_map(const Mat &image, float resolution, float size);
-        // std::vector<double> b = {0.95654368, -7.29004346, 24.59047794, -48.75218652, 60.51090319, -48.75218652, 24.59047794, -7.29004346, 0.95654368};
-        // std::vector<double> a = {1.0, -7.512191, 25.66782538, -49.0144187, 60.48563302, -48.47511596, 23.5183952, -6.97042531, 0.80048889};
-        void simulate_sinusoid_signal();
+        // ===========================
+        // Attributes
+        // ===========================
         vector<double> filteredData;
         vector<double> rawData;
+
+        // ===========================
+        // Methods
+        // ===========================
+        void pc_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+        void imu_callback(const sensor_msgs::msg::Imu &msg);
+        void publish_roughness_map(const Mat &image, float resolution, float size);
+        void simulate_sinusoid_signal();
         void save_filtered_data();
 
 
 
     protected:
+        // ===========================
+        // Attributes
+        // ===========================
+        // ROS 2
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_pc_;
         rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu_;
-
+        rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr pub_roughness_;
         rclcpp::TimerBase::SharedPtr timer_;
+
         std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
         std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
         geometry_msgs::msg::TransformStamped transform_stamped;
+
+        // Roughness
         Roughness roughness;
-        // BandStopFilter filter;
-        std::shared_ptr<BandStopFilter> filter_;
+
+        // Notch bandstop filter;
         std::shared_ptr<Dsp> DSP_;
 
         // Initialize PCL pointcloud
-        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud;
+        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud;        
 
-        rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr pub_roughness_;
-        
+        // Config file reader
         rapidjson::Document p; 
 
-        // Number of pass
-        double filtered_data;
         
-
-
+        // ===========================
+        // Methods
+        // ===========================
         void get_parameters(std::string parameters_path);
         void lookupTransform();
 };

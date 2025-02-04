@@ -5,7 +5,7 @@
 
     "map_resolution":0.1,
     "map_size":5,
-    "map_unknown_transparency":true,
+    "map_unknown_transparency":false,
     "map_low_resolution_division_factor":4,
 
     "ransac_iterations":100,

@@ -36,10 +36,14 @@ class Roughness
         Roughness(/* args */) {};
         ~Roughness() {};
 
-        // Public attributes
+        // ===========================
+        // Attributes
+        // ===========================
+        // Traversability grids
         vector<vector<vector<float>>> TGrid; //Grid of std_deviation, slope and gradient for each cell
         vector<vector<vector<float>>> TMeanGrid; //Grid of std_deviation, slope and gradient for each cell
         
+        // Point cloud grids
         vector<vector<vector<pcl::PointXYZI>>> PCGrid; //Grid with cells filled with points from the PC
         vector<vector<vector<pcl::PointXYZI>>> PCLowGrid; //Grid with cells filled with points from the PC
         
@@ -58,27 +62,34 @@ class Roughness
         bool stylized=false;
         int ransac_iterations;
         unsigned int nb_cells;
+
+        // Traversability image conversion
         MapCreator map_creator;
         Mat image_roughness;
 
-
+        // ===========================
+        // Methods
+        // ===========================
         float CalculateStd(vector<float>& distances);
         double calculateNorm(double linear_accel_x, double linear_accel_y, double linear_accel_z);
 
-
         //Main method
-        void CalculateRoughness(pcl::PointCloud<pcl::PointXYZI>::Ptr Data_in);
+        void CalculatePCRoughness(pcl::PointCloud<pcl::PointXYZI>::Ptr Data_in);
         
         void DisplayGrid(); //For debug purposes
 
 
         
     protected:
-        // Protected attributes
+        // ===========================
+        // Attributes
+        // ===========================
         pcl::PointCloud<pcl::PointXYZI>::Ptr Data_in;
         float LETHAL = 100;
 
-        // Utility methods
+        // ===========================
+        // Methods
+        // ===========================
         void ImportPCD(string path);
         void CreateTGrid(int nb_cells);
         void CreatePCGrid(int nb_cells);
