@@ -74,7 +74,7 @@ class ROSWrapper : public rclcpp::Node
         // ===========================
         void pc_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
         void imu_callback(const sensor_msgs::msg::Imu &msg);
-        void publish_roughness_map(const Mat &image, float resolution, float size);
+        void publish_roughness_map(const Mat &image, float resolution, float size_w, float size_h, int origin_x, int origin_y);
         void simulate_sinusoid_signal();
         void save_filtered_data();
 

@@ -22,12 +22,18 @@
 // Custom libraries
 #include "Ransac.hpp"
 #include "MapCreator.hpp"
+#include "DynamicGrid.hpp"
 
 
 
 using namespace cv;
 
 using namespace std;
+
+// Each cell is a vector<double> of size 3 representing terrain state.
+using TerrainCell = vector<double>;  
+// The global grid is a 2D grid where each cell is a TerrainCell.
+using TerrainGrid = vector<vector<TerrainCell>>;
 
 
 class Roughness
@@ -40,8 +46,8 @@ class Roughness
         // Attributes
         // ===========================
         // Traversability grids
-        vector<vector<vector<double>>> TGridLocal; //Grid of std_deviation, slope and gradient for each cell - Local
-        vector<vector<vector<double>>> TGridGlobal; //Grid of std_deviation, slope and gradient for each cell - Global
+        TerrainGrid TGridLocal; //Grid of std_deviation, slope and gradient for each cell - Local
+        DynamicGlobalGrid globalGrid; // Global traversability grid
         
         // Point cloud grids
         vector<vector<vector<pcl::PointXYZI>>> PCGrid; //Grid with cells filled with points from the PC
@@ -53,7 +59,7 @@ class Roughness
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloud;
         float resolution;
         int low_grid_resolution=4;
-        float size;
+        float local_size;
         float roughness_threshold=1;
         float roughness_shift=0;
         float height=1;
@@ -65,7 +71,10 @@ class Roughness
 
         // Traversability image conversion
         MapCreator map_creator;
-        Mat image_roughness;
+        Mat image_local_roughness;
+        Mat image_global_roughness;
+
+
 
         // ===========================
         // Methods
@@ -76,8 +85,10 @@ class Roughness
         //Main method
         void CalculatePCRoughness(pcl::PointCloud<pcl::PointXYZI>::Ptr Data_in);
         
+        void FillTGridGlobal(float x_pose, float y_pose);
+        
         void DisplayGrid(); //For debug purposes
-
+        void TestGrid();
 
         
     protected:

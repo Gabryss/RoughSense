@@ -19,7 +19,7 @@
 void Roughness::CalculatePCRoughness(pcl::PointCloud<pcl::PointXYZI>::Ptr Data_in)
 // Core method that call the other methods to calculate the point cloud roughness
 {
-    nb_cells = static_cast<unsigned int>(size/resolution);
+    nb_cells = static_cast<unsigned int>(local_size/resolution);
 
     cloud = Data_in;
     
@@ -27,7 +27,7 @@ void Roughness::CalculatePCRoughness(pcl::PointCloud<pcl::PointXYZI>::Ptr Data_i
     CreateTGridLocal(nb_cells);
     FillPCGrid();
     FillTGridLocal();
-    image_roughness = map_creator.MakeMap(TGridLocal, 0);
+    image_local_roughness = map_creator.MakeMap(TGridLocal, 0);
 };
 
 
@@ -84,10 +84,10 @@ void Roughness::FillPCGrid()
     //All the points outside the map are discarded
     for(unsigned int i = 0; i < cloud->points.size(); i++)
     {
-        if(((pose[0]-(size/2)) < cloud->points[i].x) && (cloud->points[i].x < (pose[0]+(size/2))) && ((pose[1]-(size/2)) < cloud->points[i].y) && (cloud->points[i].y < (pose[1]+(size/2))) && ( cloud->points[i].z < (height+pose[2])))
+        if(((pose[0]-(local_size/2)) < cloud->points[i].x) && (cloud->points[i].x < (pose[0]+(local_size/2))) && ((pose[1]-(local_size/2)) < cloud->points[i].y) && (cloud->points[i].y < (pose[1]+(local_size/2))) && ( cloud->points[i].z < (height+pose[2])))
         {
-            unsigned int indx = static_cast<unsigned int>((cloud->points[i].x - (pose[0]-(size/2))) / (size) * (size / resolution));
-            unsigned int indy = static_cast<unsigned int>((cloud->points[i].y - (pose[1]-(size/2))) / (size) * (size / resolution));
+            unsigned int indx = static_cast<unsigned int>((cloud->points[i].x - (pose[0]-(local_size/2))) / (local_size) * (local_size / resolution));
+            unsigned int indy = static_cast<unsigned int>((cloud->points[i].y - (pose[1]-(local_size/2))) / (local_size) * (local_size / resolution));
 
 
             // Edge case for odd numbers
@@ -185,6 +185,15 @@ void Roughness::FillTGridLocal()
 
 
 
+void Roughness::FillTGridGlobal(float x_pose, float y_pose)
+{
+    int x = static_cast<int>(x_pose);
+    int y = static_cast<int>(y_pose);
+
+    globalGrid.placeLocalGrid(TGridLocal, x, y);
+    image_global_roughness = map_creator.MakeMap(globalGrid.grid, 0);
+}
+
 
 
 // =====================================================
@@ -281,3 +290,37 @@ void Roughness::ImportPCD(string path)
 };
 
 
+
+void Roughness::TestGrid()
+{
+    // Example 1: Place a local grid with positive offset.
+    // Each cell is a vector<double> of size 3.
+    TerrainGrid localGrid1 = {
+        { {1.0, 1.1, 1.2}, {2.0, 2.1, 2.2} },
+        { {3.0, 3.1, 3.2}, {4.0, 4.1, 4.2} }
+    };
+    // Place localGrid1 at world coordinate (0, 0)
+    globalGrid.placeLocalGrid(localGrid1, 0, 0);
+    std::cout << "After placing localGrid1 at (0,0):\n";
+    globalGrid.print();
+
+    // Example 2: Place another local grid with negative offset.
+    TerrainGrid localGrid2 = {
+        { {9.0, 9.1, 9.2} }
+    };
+    // Place localGrid2 at world coordinate (-1, -1)
+    globalGrid.placeLocalGrid(localGrid2, -1, -1);
+    std::cout << "After placing localGrid2 at (-1,-1):\n";
+    globalGrid.print();
+
+    // Example 3: Place a third local grid at a different position.
+    TerrainGrid localGrid3 = {
+        { {7.0, 7.1, 7.2}, {8.0, 8.1, 8.2} }
+    };
+    // Place localGrid3 at world coordinate (2, -2)
+    globalGrid.placeLocalGrid(localGrid3, 2, -2);
+    std::cout << "After placing localGrid3 at (2,-2):\n";
+    globalGrid.print();
+
+    return;
+};

@@ -52,7 +52,8 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
 
     // Set roughness parameters
     roughness.resolution = p["map_resolution"].GetFloat();
-    roughness.size = p["map_size"].GetFloat();
+    roughness.globalGrid.resolution = p["map_resolution"].GetFloat();
+    roughness.local_size = p["map_size"].GetFloat();
     roughness.stylized=p["map_unknown_transparency"].GetBool();
     roughness.ransac_iterations=p["ransac_iterations"].GetInt();
     roughness.roughness_threshold=p["roughness_threshold"].GetFloat();
@@ -67,6 +68,7 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     imu_sampling_frequency = p["imu_sampling_frequency"].GetFloat();
     imu_filter_frequency = p["imu_filter_frequency"].GetFloat();
     imu_filter_bandwidth = p["imu_filter_bandwidth"].GetFloat();
+    roughness.TestGrid();
     DSP_ = std::make_shared<Dsp>();
     DSP_->create_filter(imu_filter_frequency, imu_filter_bandwidth, imu_sampling_frequency);
 
@@ -147,11 +149,14 @@ void ROSWrapper::lookupTransform()
       if(cloud->size()>0)
       {
         roughness.CalculatePCRoughness(cloud);
-        Mat image_roughness = roughness.image_roughness;
+        roughness.FillTGridGlobal(roughness.pose[0], roughness.pose[1]); // Fill the global map
+        Mat image_local_roughness = roughness.image_local_roughness;
+        Mat image_global_roughness = roughness.image_global_roughness;
 
         float resolution = roughness.resolution;
-        float size = roughness.size;
-        publish_roughness_map(image_roughness, resolution, size);
+        float size_w = roughness.globalGrid.grid.size();
+        float size_h = roughness.globalGrid.grid[0].size();
+        publish_roughness_map(image_global_roughness, resolution, size_w, size_h, roughness.globalGrid.originRow, roughness.globalGrid.originCol);
       }
       else
       {
@@ -178,9 +183,9 @@ void ROSWrapper::lookupTransform()
 // PUBLISHER
 // =====================================================
 
-void ROSWrapper::publish_roughness_map(const Mat &image, float resolution, float size)
+void ROSWrapper::publish_roughness_map(const Mat &image, float resolution, float size_w, float size_h, int origin_x, int origin_y)
 {
-    int nb_cells = size / resolution;
+    // int width = size / resolution;
 
     // Create a vector to hold the data from the Mat (int8_t means signed char)
     std::vector<int8_t> static_map_cell_values(image.rows * image.cols);
@@ -196,10 +201,10 @@ void ROSWrapper::publish_roughness_map(const Mat &image, float resolution, float
     nav_msgs::msg::MapMetaData map_meta_data;
     map_meta_data.map_load_time = this->now();
     map_meta_data.resolution = resolution;
-    map_meta_data.width =  nb_cells;
-    map_meta_data.height = nb_cells;
-    map_meta_data.origin.position.x = (-size/2) + transform_stamped.transform.translation.x;
-    map_meta_data.origin.position.y = (-size/2) + transform_stamped.transform.translation.y;
+    map_meta_data.width =  size_w;
+    map_meta_data.height = size_h;
+    map_meta_data.origin.position.x = origin_x;
+    map_meta_data.origin.position.y = origin_y;
     map_meta_data.origin.position.z = transform_stamped.transform.translation.z;
     map_meta_data.origin.orientation.x= 0.7071068;
     map_meta_data.origin.orientation.y= 0.7071068;
