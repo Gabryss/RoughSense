@@ -43,20 +43,116 @@
 //     return filtered_signal;
 // };
 
+// Dsp::~Dsp()
+// {
+    
+// };
 
-
-double Dsp::processSample(double x_n) 
+void Dsp::create_filter(float f_center_p, float bandwidth_p, float fs_p)
 {
-        double y_n = b[0] * x_n + b[1] * x_n_1 + b[2] * x_n_2 - a[1] * y_n_1 - a[2] * y_n_2;
+    // --- Define filter design parameters ---
+    // For the prototype design, you choose:
+    //   ftype: the analog prototype (e.g., Butterworth)
+    //   btype: the filter band type (e.g., band-stop for a notch filter)
+    //   format: coefficient format (typically second-order sections (SOS))
+    //   order: filter order (try 4 or 6 to start)
+    //   fc: cutoff frequency (normalized: 0 < fc < 0.5; 0.5 corresponds to Nyquist frequency)
+    //   f0: center frequency of the notch (normalized)
+    //   Ap: passband ripple in dB (typically a small value, e.g., 1 dB)
 
-        // Shift past states
-        x_n_2 = x_n_1;
-        x_n_1 = x_n;
-        y_n_2 = y_n_1;
-        y_n_1 = y_n;
+    // =====================================================
+    // User-specified parameters (in Hz)
+    // =====================================================
+    // float f_center  = 27.5f;   // Desired center frequency (notch center)
+    // float bandwidth = 5.0f;    // Desired bandwidth of the notch
+    // float fs        = 400.0f;  // Sampling frequency
 
-        return y_n;
+    float f_center = f_center_p;    // Desired center frequency (notch center)
+    float bandwidth = bandwidth_p;  // Desired bandwidth of the notch
+    float fs = fs_p * 2;            // Sampling frequency (*2 because of the Nyquist frequency)
+
+    // =====================================================
+    // Compute the lower and upper edges of the notch
+    // =====================================================
+    float f_low  = f_center - (bandwidth / 2.0f);
+    float f_high = f_center + (bandwidth / 2.0f);
+
+
+    // =====================================================
+    // Compute the Nyquist frequency
+    // =====================================================
+    // Nyquist Criterion:
+    // For a signal with a maximum frequency of 200 Hz, you should sample at least at 400 Hz to capture all the frequency information without ambiguity. 
+    // Sampling at only 100 Hz is far below this requirement.
+    float nyquist = fs / 2.0f;
+
+
+    // =====================================================
+    // Validate frequency ranges
+    // =====================================================
+    if (f_low <= 0.0f || f_high >= nyquist) {
+        std::cerr << "Error: Frequency parameters out of range.\n"
+                  << "f_low = " << f_low << " Hz, f_high = " << f_high 
+                  << " Hz, Nyquist = " << nyquist << " Hz\n";
+        return;
+    }
+
+    // =====================================================
+    // Compute normalized frequencies (0 to 1; 1 corresponds to Nyquist)
+    // =====================================================
+    float fc_norm = f_low / nyquist;   // Normalized cutoff (lower edge) frequency
+    float f0_norm = f_center / nyquist;  // Normalized center frequency
+
+    std::cout << "Normalized lower edge (fc_norm): " << fc_norm << "\n";
+    std::cout << "Normalized center frequency (f0_norm): " << f0_norm << "\n";
+
+    // =====================================================
+    // Filter design parameters
+    // =====================================================
+    unsigned int order = 4;   // Filter order
+    float Ap = 1.0f;          // Passband ripple in dB
+    float As = 40.0f;         // Stopband attenuation in dB
+
+    // Create the band-stop (notch) filter.
+    // The prototype design interface will compute the necessary second-order sections.
+    _filter = iirfilt_crcf_create_prototype(
+      LIQUID_IIRDES_BUTTER,    // analog prototype type (Butterworth)
+      LIQUID_IIRDES_BANDSTOP,  // filter type: band-stop (notch)
+      LIQUID_IIRDES_SOS,       // design format: use second-order sections
+      order,
+      fc_norm,                      // cutoff frequency
+      f0_norm,                      // notch (center) frequency
+      Ap,
+      As
+    );
+
+    if (!_filter) {
+      cerr <<"Failed to create IIR filter!"<< endl;
+      return;
+    }
 };
+
+
+void Dsp::process_sample(complex<float> input, complex<float> *output)
+{
+    // Execute one filtering iteration.
+    iirfilt_crcf_execute(_filter, input, output);
+};
+
+
+
+// double Dsp::processSample(double x_n) 
+// {
+//         double y_n = b[0] * x_n + b[1] * x_n_1 + b[2] * x_n_2 - a[1] * y_n_1 - a[2] * y_n_2;
+
+//         // Shift past states
+//         x_n_2 = x_n_1;
+//         x_n_1 = x_n;
+//         y_n_2 = y_n_1;
+//         y_n_1 = y_n;
+
+//         return y_n;
+// };
 
 
 // Function to compute bandstop filter coefficients

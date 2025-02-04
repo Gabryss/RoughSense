@@ -52,87 +52,8 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
 
 
     // IMU
-    // --- Define filter design parameters ---
-    // For the prototype design, you choose:
-    //   ftype: the analog prototype (e.g., Butterworth)
-    //   btype: the filter band type (e.g., band-stop for a notch filter)
-    //   format: coefficient format (typically second-order sections (SOS))
-    //   order: filter order (try 4 or 6 to start)
-    //   fc: cutoff frequency (normalized: 0 < fc < 0.5; 0.5 corresponds to Nyquist frequency)
-    //   f0: center frequency of the notch (normalized)
-    //   Ap: passband ripple in dB (typically a small value, e.g., 1 dB)
-
-    // =====================================================
-    // User-specified parameters (in Hz)
-    // =====================================================
-    float f_center  = 27.5f;   // Desired center frequency (notch center)
-    float bandwidth = 5.0f;    // Desired bandwidth of the notch
-    float fs        = 400.0f;  // Sampling frequency
-
-    // =====================================================
-    // Compute the lower and upper edges of the notch
-    // =====================================================
-    float f_low  = f_center - (bandwidth / 2.0f);
-    float f_high = f_center + (bandwidth / 2.0f);
-
-
-    // =====================================================
-    // Compute the Nyquist frequency
-    // =====================================================
-    float nyquist = fs / 2.0f;
-
-
-    // =====================================================
-    // Validate frequency ranges
-    // =====================================================
-    if (f_low <= 0.0f || f_high >= nyquist) {
-        std::cerr << "Error: Frequency parameters out of range.\n"
-                  << "f_low = " << f_low << " Hz, f_high = " << f_high 
-                  << " Hz, Nyquist = " << nyquist << " Hz\n";
-        return;
-    }
-
-    // =====================================================
-    // Compute normalized frequencies (0 to 1; 1 corresponds to Nyquist)
-    // =====================================================
-    float fc_norm = f_low / nyquist;   // Normalized cutoff (lower edge) frequency
-    float f0_norm = f_center / nyquist;  // Normalized center frequency
-
-    std::cout << "Normalized lower edge (fc_norm): " << fc_norm << "\n";
-    std::cout << "Normalized center frequency (f0_norm): " << f0_norm << "\n";
-
-    // =====================================================
-    // Filter design parameters
-    // =====================================================
-    unsigned int order = 4;   // Filter order
-    float Ap = 1.0f;          // Passband ripple in dB
-    float As = 40.0f;         // Stopband attenuation in dB
-
-    // Create the band-stop (notch) filter.
-    // The prototype design interface will compute the necessary second-order sections.
-    _filter = iirfilt_crcf_create_prototype(
-      LIQUID_IIRDES_BUTTER,    // analog prototype type (Butterworth)
-      LIQUID_IIRDES_BANDSTOP,  // filter type: band-stop (notch)
-      LIQUID_IIRDES_SOS,       // design format: use second-order sections
-      order,
-      fc_norm,                      // cutoff frequency
-      f0_norm,                      // notch (center) frequency
-      Ap,
-      As
-    );
-
-    if (!_filter) {
-      RCLCPP_ERROR(this->get_logger(), "Failed to create IIR filter!");
-      rclcpp::shutdown();
-    }
-
-
-
     DSP_ = std::make_shared<Dsp>();
-    // DSP_->computeBandstopCoefficients();
-    RCLCPP_INFO(rclcpp::get_logger("roughness_node"), "Coefficients before normalization:");
-    RCLCPP_INFO(rclcpp::get_logger("roughness_node"), "b: [%f, %f, %f]", DSP_->b[0], DSP_->b[1], DSP_->b[2]);
-    RCLCPP_INFO(rclcpp::get_logger("roughness_node"), "a: [%f, %f, %f]", DSP_->a[0], DSP_->a[1], DSP_->a[2]);
+    DSP_->create_filter(27.5f, 5.0f, 200);
 
     // this->simulate_sinusoid_signal();
     sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
@@ -143,8 +64,6 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
 ROSWrapper::~ROSWrapper() 
 {
   save_filtered_data();
-  if (_filter)
-      iirfilt_crcf_destroy(_filter);
 };
 
 void ROSWrapper::pc_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
@@ -163,24 +82,22 @@ void ROSWrapper::imu_callback(const sensor_msgs::msg::Imu &msg)
 
     this->filtered_data = norm;
 
-    for(int i=0; i<this->number_pass; i++)
-    {
-      RCLCPP_INFO(rclcpp::get_logger("roughness_node"), "FILTERING");
-      // Filter the norm to exclude the rover's resonnancy frequencies
-      this->filtered_data = DSP_->processSample(this->filtered_data);
-    }
- 
-    
-    std::complex<float> input(norm, 0.0f);
-    std::complex<float> output;
+    complex<float> input(norm, 0.0f);
+    complex<float> output;
+
+
+      
+    // RCLCPP_INFO(rclcpp::get_logger("roughness_node"), "FILTERING");
+    // Filter the norm to exclude the rover's resonnancy frequencies
+    // this->filtered_data = DSP_->processSample(this->filtered_data);
 
     // Execute one filtering iteration.
-    iirfilt_crcf_execute(_filter, input, &output);
+    // DSP_->iirfilt_crcf_execute(DSP_->_filter, input, &output);
+    DSP_->process_sample(input, &output);
+    
 
     // Log the filtered output (here we print the real part).
     RCLCPP_INFO(this->get_logger(), "Filtered sample: %f", output.real());
-
-
 
     this->filteredData.push_back(output.real());
     
@@ -206,9 +123,14 @@ void ROSWrapper::simulate_sinusoid_signal()
 
   for(int i=0; i<DSP_->sinusoid.size(); i++)
   {
-    double filtered_data = DSP_->processSample(DSP_->sinusoid[i]);
-    this->filteredData.push_back(filtered_data);
-    RCLCPP_INFO(this->get_logger(), "Data: %.3f Filtered data: %.3f", DSP_->sinusoid[i], filtered_data);
+    complex<float> input(DSP_->sinusoid[i], 0.0f);
+    complex<float> output;
+
+    DSP_->process_sample(input, &output);
+
+    // double filtered_data = DSP_->processSample(DSP_->sinusoid[i]);
+    this->filteredData.push_back(output.real());
+    RCLCPP_INFO(this->get_logger(), "Data: %.3f Filtered data: %.3f", DSP_->sinusoid[i], output.real());
   }
 
   // Open an output file stream (CSV file).

@@ -16,6 +16,11 @@
 #include <algorithm> // For min/max element
 #include <deque>
 #include <numeric>
+#include <complex>
+
+// Liquid-DSP
+#include <liquid/liquid.h>
+
 
 using namespace std;
 
@@ -23,7 +28,11 @@ using namespace std;
 class Dsp {
     public:
         Dsp(){};
-        ~Dsp(){};
+        ~Dsp()
+        {
+            if (_filter)
+                iirfilt_crcf_destroy(_filter);
+        };
 
         // Filter a single sample
         // vector<double> applySOSFilter();
@@ -34,7 +43,13 @@ class Dsp {
         vector<double> b = {0.99728467, -1.96801354, 0.99728467};
         vector<double> a = {1.0,         -1.96801354,  0.99456935};
         vector<double> sinusoid;
+        // Liquid-DSP filter object (pointer type defined by Liquid-DSP)
+        iirfilt_crcf _filter {nullptr};
+        
+        
         void generate_simulated_signal();
+        void create_filter(float f_center_p, float bandwidth_p, float fs_p);
+        void process_sample(complex<float> input, complex<float> *output);
 
 
     protected:
