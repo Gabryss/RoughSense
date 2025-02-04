@@ -14,6 +14,14 @@ $ colcon build
 $ source install/setup.bash
 $ ros2 launch RoughSense roughness_launch.py
 ```
+---
+Rely on Liquid DSP library (for filtering)
+Installation process
+```
+$ sudo apt update
+$ sudo apt install libliquid-dev
+```
+
 
 A config file is provided within `/config` to fine tune the algorithm according to your robot needs.
 
