@@ -2,10 +2,10 @@ cmake_minimum_required(VERSION 3.8)
 project(RoughSense)
 
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 14)
+  set(CMAKE_CXX_STANDARD 17)
 endif()
 
-add_compile_options(-std=c++14 -O0 -g -ggdb)
+add_compile_options(-std=c++17 -O0 -g -ggdb)
 
 # if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 #   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -54,6 +54,7 @@ add_library(Roughness src/Roughness.cpp)
 add_library(Ransac src/Ransac.cpp)
 add_library(MapCreator src/MapCreator.cpp)
 add_library(Dsp src/Dsp.cpp)
+add_library(DynamicGrid src/DynamicGrid.cpp)
 
 
 
@@ -71,6 +72,7 @@ target_link_libraries(roughness_node
   Ransac
   MapCreator
   Dsp
+  DynamicGrid
 )
 
 #Find the executable name
