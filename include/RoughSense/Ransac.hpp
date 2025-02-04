@@ -33,24 +33,24 @@ class RansacAlgorithm
         int k=100;                       // Number of iterations allowed in the algorithm
 
         vector<pcl::PointXYZI> data;     // Input data
-        vector<float> distances;         // Distances from point to plane
-        vector<float> temp_distances;    // Temp distance vector
+        vector<double> distances;         // Distances from point to plane
+        vector<double> temp_distances;    // Temp distance vector
         
-        vector<float> bestFit;           // Model parameters
+        vector<double> bestFit;           // Model parameters
 
 
         // ===========================
         // Methods
         // ===========================
-        void FitPlane(int t, vector<pcl::PointXYZI>& data, vector<float>& bestFit);
+        void FitPlane(int t, vector<pcl::PointXYZI>& data, vector<double>& bestFit);
         void ResetState();
 
     protected:
         // ===========================
         // Methods
         // ===========================
-        vector<float> PlaneEquation(const pcl::PointXYZI& p1, const pcl::PointXYZI& p2, const pcl::PointXYZI& p3);
-        float CalculateDistanceFromPlane(const pcl::PointXYZI& points, const vector<float>& plane_eq);
-        int CountInliers(vector<pcl::PointXYZI>& data, vector<float>& plane_eq, int t);
+        vector<double> PlaneEquation(const pcl::PointXYZI& p1, const pcl::PointXYZI& p2, const pcl::PointXYZI& p3);
+        double CalculateDistanceFromPlane(const pcl::PointXYZI& points, const vector<double>& plane_eq);
+        int CountInliers(vector<pcl::PointXYZI>& data, vector<double>& plane_eq, int t);
         
 };
