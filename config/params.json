@@ -1,4 +1,7 @@
 {
+    "debug_info": false,
+    "debug_time_s":5,
+
     "pc_topic": "/cloud_map",
     "tf_topic":"/tf",
     "height":1,
@@ -16,5 +19,8 @@
     "roughness_shift":0.003,
 
 
-    "imu_topic": "/livox/imu"
+    "imu_topic": "/livox/imu",
+    "imu_sampling_frequency":200,
+    "imu_filter_frequency":27.5,
+    "imu_filter_bandwidth":5.0
 }
