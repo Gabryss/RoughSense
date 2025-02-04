@@ -10,6 +10,9 @@
  */
 #include "Roughness.hpp"
 
+
+
+
 // =====================================================
 // Main point cloud function
 // =====================================================
@@ -21,10 +24,10 @@ void Roughness::CalculatePCRoughness(pcl::PointCloud<pcl::PointXYZI>::Ptr Data_i
     cloud = Data_in;
     
     CreatePCGrid(nb_cells);
-    CreateTGrid(nb_cells);
+    CreateTGridLocal(nb_cells);
     FillPCGrid();
-    FillTGrid();
-    image_roughness = map_creator.MakeMap(TGrid, 0);
+    FillTGridLocal();
+    image_roughness = map_creator.MakeMap(TGridLocal, 0);
 };
 
 
@@ -34,25 +37,17 @@ void Roughness::CalculatePCRoughness(pcl::PointCloud<pcl::PointXYZI>::Ptr Data_i
 // Process grids
 // =====================================================
 
-
-
-
-
-void Roughness::CreateTGrid(int nb_cells)
+void Roughness::CreateTGridLocal(int nb_cells)
 // Create the Roughness grid size nb_cells
 {
-    TGrid.clear();
-    TMeanGrid.clear();
-    TGrid.resize(nb_cells);
-    TMeanGrid.resize(nb_cells);
+    TGridLocal.clear();
+    TGridLocal.resize(nb_cells);
     for(int ind_x=0; ind_x<nb_cells; ind_x++)
     {
-        TGrid[ind_x].resize(nb_cells);
-        TMeanGrid[ind_x].resize(nb_cells);
+        TGridLocal[ind_x].resize(nb_cells);
         for(int ind_y=0; ind_y<nb_cells; ind_y++)
         {
-            TGrid[ind_x][ind_y].resize(3);
-            TMeanGrid[ind_x][ind_y].resize(3);
+            TGridLocal[ind_x][ind_y].resize(3);
         }
     }
 };
@@ -126,7 +121,7 @@ void Roughness::FillPCGrid()
     }
 };
 
-void Roughness::FillTGrid()
+void Roughness::FillTGridLocal()
 {
     //Apply different algorithm to fill the Roughness grid
     //Now used:
@@ -135,13 +130,13 @@ void Roughness::FillTGrid()
     ransac.k = ransac_iterations;
     MapCreator map_creator;
 
-    map_creator.MakeMap(TGrid, 0);
+    map_creator.MakeMap(TGridLocal, 0);
 
     for(int ind_x=0; ind_x<nb_cells; ind_x++)
     {
         for(int ind_y=0; ind_y<nb_cells; ind_y++)
         {
-            vector<float> best(4);
+            vector<double> best(4);
             int ind_x_low = ind_x / low_grid_resolution;
             int ind_y_low = ind_y / low_grid_resolution;
 
@@ -160,20 +155,20 @@ void Roughness::FillTGrid()
             if(PCGrid[ind_x][ind_y].size()>3)
             {
                 ransac.FitPlane(1, PCGrid[ind_x][ind_y], best);
-                float std = CalculateStd(ransac.distances);
+                double std = CalculateStd(ransac.distances);
                 
                 // Roughness grid
-                TGrid[ind_x][ind_y][0] = roughness_normalization(std, roughness_threshold);
+                TGridLocal[ind_x][ind_y][0] = roughness_normalization(std, roughness_threshold);
             }
 
             // Rough estimation based on the neighbors cells
             else if(PCLowGrid[ind_x_low][ind_y_low].size()>3)
             {
                 ransac.FitPlane(1, PCLowGrid[ind_x_low][ind_y_low], best);
-                float std = CalculateStd(ransac.distances);
+                double std = CalculateStd(ransac.distances);
                 
                 // Roughness grid
-                TGrid[ind_x][ind_y][0] = roughness_normalization(std, roughness_threshold);
+                TGridLocal[ind_x][ind_y][0] = roughness_normalization(std, roughness_threshold);
             }
 
             // No data result to unknown terrain
@@ -181,7 +176,7 @@ void Roughness::FillTGrid()
             {
                 if(!stylized)
                 {
-                    TGrid[ind_x][ind_y][0] = -1;
+                    TGridLocal[ind_x][ind_y][0] = -1;
                 }
             }
         }
@@ -196,16 +191,16 @@ void Roughness::FillTGrid()
 // STD
 // =====================================================
 
-float Roughness::CalculateStd(vector<float>& distances)
+double Roughness::CalculateStd(vector<double>& distances)
 {
     // Calculate mean
-    float mean = accumulate(distances.begin(), distances.end(), 0.0)/distances.size();    
+    double mean = accumulate(distances.begin(), distances.end(), 0.0)/distances.size();    
 
     // Calculate variance
-    float var = 0;
-    for(long unsigned int n=0; n<distances.size(); n++)
+    double var = 0.0;
+    for(double data : distances)
     {
-        var += (distances[n] - mean) * (distances[n] - mean);
+        var += (data - mean) * (data - mean);
     };
     var /= distances.size();
 
@@ -230,11 +225,11 @@ double Roughness::calculateNorm(double linear_accel_x, double linear_accel_y, do
 
 
 // Normalize the values. (everything above the threshold get the LETHAL value).
-float Roughness::roughness_normalization(float value, float threshold)
+double Roughness::roughness_normalization(double value, float threshold)
 {
     // Normalize the roughness between 0 and 100
     // Any value above the threshold will be applied with the LETHAL value (100)
-    float normalized_value;
+    double normalized_value;
     if (value >= threshold)
     {
         normalized_value = LETHAL;
@@ -257,11 +252,11 @@ float Roughness::roughness_normalization(float value, float threshold)
 // Display the roughness (traversability) grid in the terminal
 void Roughness::DisplayGrid()
 {
-    for(long unsigned int ind_x=0; ind_x<TGrid.size(); ind_x++)
+    for(long unsigned int ind_x=0; ind_x<TGridLocal.size(); ind_x++)
     {
-        for(long unsigned int ind_y=0; ind_y<TGrid[0].size(); ind_y++)
+        for(long unsigned int ind_y=0; ind_y<TGridLocal[0].size(); ind_y++)
         {
-            cout<<"|"<<TGrid[ind_x][ind_y][0]<<"|"<<TGrid[ind_x][ind_y][1]<<"|"<<TGrid[ind_x][ind_y][2]<<"|   ";
+            cout<<"|"<<TGridLocal[ind_x][ind_y][0]<<"|"<<TGridLocal[ind_x][ind_y][1]<<"|"<<TGridLocal[ind_x][ind_y][2]<<"|   ";
         }
         cout<<endl;
         cout<<endl;

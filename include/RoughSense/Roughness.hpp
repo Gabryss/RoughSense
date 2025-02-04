@@ -40,8 +40,8 @@ class Roughness
         // Attributes
         // ===========================
         // Traversability grids
-        vector<vector<vector<float>>> TGrid; //Grid of std_deviation, slope and gradient for each cell
-        vector<vector<vector<float>>> TMeanGrid; //Grid of std_deviation, slope and gradient for each cell
+        vector<vector<vector<double>>> TGridLocal; //Grid of std_deviation, slope and gradient for each cell - Local
+        vector<vector<vector<double>>> TGridGlobal; //Grid of std_deviation, slope and gradient for each cell - Global
         
         // Point cloud grids
         vector<vector<vector<pcl::PointXYZI>>> PCGrid; //Grid with cells filled with points from the PC
@@ -70,7 +70,7 @@ class Roughness
         // ===========================
         // Methods
         // ===========================
-        float CalculateStd(vector<float>& distances);
+        double CalculateStd(vector<double>& distances);
         double calculateNorm(double linear_accel_x, double linear_accel_y, double linear_accel_z);
 
         //Main method
@@ -85,16 +85,16 @@ class Roughness
         // Attributes
         // ===========================
         pcl::PointCloud<pcl::PointXYZI>::Ptr Data_in;
-        float LETHAL = 100;
+        float LETHAL = 100.0;
 
         // ===========================
         // Methods
         // ===========================
         void ImportPCD(string path);
-        void CreateTGrid(int nb_cells);
+        void CreateTGridLocal(int nb_cells);
         void CreatePCGrid(int nb_cells);
         void FillPCGrid();
-        void FillTGrid();
-        float roughness_normalization(float value, float threshold);
+        void FillTGridLocal();
+        double roughness_normalization(double value, float threshold);
 
 };
