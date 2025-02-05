@@ -187,8 +187,13 @@ void Roughness::FillTGridLocal()
 
 void Roughness::FillTGridGlobal(float x_pose, float y_pose)
 {
-    int x = static_cast<int>(x_pose);
-    int y = static_cast<int>(y_pose);
+    // int x = static_cast<int>(x_pose);
+    // int y = static_cast<int>(y_pose);
+
+    int x = static_cast<int>((x_pose*100)/globalGrid.resolution);
+    int y = static_cast<int>((y_pose*100)/globalGrid.resolution);
+
+
 
     globalGrid.placeLocalGrid(TGridLocal, x, y);
     image_global_roughness = map_creator.MakeMap(globalGrid.grid, 0);
