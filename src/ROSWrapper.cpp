@@ -201,10 +201,10 @@ void ROSWrapper::publish_roughness_map(const Mat &image, float resolution, float
     nav_msgs::msg::MapMetaData map_meta_data;
     map_meta_data.map_load_time = this->now();
     map_meta_data.resolution = resolution;
-    map_meta_data.width =  size_w;
-    map_meta_data.height = size_h;
-    map_meta_data.origin.position.x = origin_x;
-    map_meta_data.origin.position.y = origin_y;
+    map_meta_data.width =  roughness.globalGrid.grid.size();
+    map_meta_data.height = roughness.globalGrid.grid[0].size();
+    map_meta_data.origin.position.x = 0;
+    map_meta_data.origin.position.y = 0;
     map_meta_data.origin.position.z = transform_stamped.transform.translation.z;
     map_meta_data.origin.orientation.x= 0.7071068;
     map_meta_data.origin.orientation.y= 0.7071068;
@@ -216,7 +216,7 @@ void ROSWrapper::publish_roughness_map(const Mat &image, float resolution, float
     occupancy_grid.header.stamp = this->now();
     occupancy_grid.header.frame_id = p["roughness_frame_id"].GetString();
     occupancy_grid.info = map_meta_data;
-    occupancy_grid.data.resize(image.rows * image.cols);
+    occupancy_grid.data.resize(map_meta_data.width * map_meta_data.height);
     occupancy_grid.data = static_map_cell_values;
 
     pub_roughness_->publish(occupancy_grid);

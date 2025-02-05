@@ -56,6 +56,12 @@ using std::placeholders::_1;
 using namespace std::chrono_literals;
 using namespace cv;
 
+// Each cell is a vector<double> of size 3 representing terrain state.
+using TerrainCell = vector<double>;  
+// The global grid is a 2D grid where each cell is a TerrainCell.
+using TerrainGrid = vector<vector<TerrainCell>>;
+
+
 class ROSWrapper : public rclcpp::Node
 {
     public:
@@ -96,6 +102,9 @@ class ROSWrapper : public rclcpp::Node
 
         // Roughness
         Roughness roughness;
+
+        // Saved global map
+        TerrainGrid global_grid;
 
         // Notch bandstop filter;
         std::shared_ptr<Dsp> DSP_;
