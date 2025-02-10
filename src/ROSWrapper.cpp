@@ -148,16 +148,25 @@ void ROSWrapper::lookupTransform()
       transform_stamped = tf_buffer_->lookupTransform("map", "base_footprint", tf2::TimePointZero);
       roughness.pose = {transform_stamped.transform.translation.x, transform_stamped.transform.translation.y, transform_stamped.transform.translation.z};
 
+      coordinates_grid current_cell = compute_offset();
       // Calculate the IMU roughness
-      vector<double> window_imu_vector = convert_deque_vector(window_imu);
-      double roughness_imu = roughness.CalculateStd(window_imu_vector);
+      // coordinates_grid new_cell = {cell_indx, cell_indy};
+      if (current_cell != previous_cell)
+      {
+        vector<double> window_imu_vector = convert_deque_vector(window_imu);
+        double roughness_imu = roughness.CalculateStd(window_imu_vector);
+        RCLCPP_WARN(this->get_logger(), "current_x: %.3d, current_y: %.3d, roughness: %.3f", current_cell[0], current_cell[1], roughness_imu);
+        vector<long unsigned int> robot_imu_coordinates = {current_cell[0] + (roughness.TGridLocal.size()/2), current_cell[1] + (roughness.TGridLocal.size()/2)};
+        
+        global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][1] = roughness_imu;
+      }
 
       // Calculate the point cloud roughness
       if(cloud->size()>0)
       {
         roughness.CalculatePCRoughness(cloud);
         coordinates_local = {roughness.pose[0], roughness.pose[1]};
-        update_global_map();
+        update_global_map(current_cell);
         publish_roughness_map(roughness.TGridLocal, true);
         publish_roughness_map(global_grid, false);
       }
@@ -226,7 +235,7 @@ void ROSWrapper::publish_roughness_map(const TerrainGrid &grid, bool is_local)
       for (unsigned int x = 0; x < map_meta_data.width; ++x) 
       {
         unsigned int index = y * map_meta_data.width + x;
-        occupancy_grid.data[index] = grid[y][x][0];                    // Fill data
+        occupancy_grid.data[index] = grid[y][x][1]*100;                    // Fill data
       }
     }
 
@@ -379,19 +388,9 @@ void ROSWrapper::create_global_map()
 
 
 // Update global map
-void ROSWrapper::update_global_map()
+void ROSWrapper::update_global_map(coordinates_grid offset)
 {
-
-  // Local origin
-  double local_origin_x =  (coordinates_local[0]) - (roughness.local_size / 2); // In meter
-  double local_origin_y =  (coordinates_local[1]) - (roughness.local_size / 2); // In meter
-
-  double global_origin = -(global_map_size) / 2; // In meter
-
-  // Compute offset
-  int offset_x = static_cast<int>((local_origin_x - global_origin)/resolution);
-  int offset_y = static_cast<int>((local_origin_y - global_origin)/resolution);
-
+  previous_cell = offset; // Get the current cell (for IMu analysis)
 
   // Loop on each cell of the local grid
   for(int ind_x=0; ind_x<roughness.TGridLocal.size(); ind_x++)
@@ -400,8 +399,8 @@ void ROSWrapper::update_global_map()
     {
 
       // Compute the corresponding global grid cell.
-      int global_x = ind_x + offset_x;
-      int global_y = ind_y + offset_y;
+      int global_x = ind_x + offset[0];
+      int global_y = ind_y + offset[1];
 
       // Check if the computed global cell is within the bounds of the global grid.&
       if (global_x < 0 || global_x >= static_cast<int>(global_grid.size()) ||
@@ -416,6 +415,24 @@ void ROSWrapper::update_global_map()
       global_grid[global_x][global_y][0] = roughness.TGridLocal[ind_x][ind_y][0];
     }
   }
+};
+
+
+// Compute offset
+coordinates_grid ROSWrapper::compute_offset()
+{
+    // Compute offset
+    double local_origin_x =  (roughness.pose[0]) - (roughness.local_size / 2); // In meter
+    double local_origin_y =  (roughness.pose[1]) - (roughness.local_size / 2); // In meter
+
+    double global_origin = -(global_map_size) / 2; // In meter
+
+    // Compute offset
+    int cell_indx = static_cast<int>((local_origin_x - global_origin)/resolution);
+    int cell_indy = static_cast<int>((local_origin_y - global_origin)/resolution);
+    RCLCPP_INFO(this->get_logger(), "cell_indx: %.3d cell_indy: %.3d", cell_indx, cell_indy);
+
+    return {cell_indx, cell_indy};
 };
 
 

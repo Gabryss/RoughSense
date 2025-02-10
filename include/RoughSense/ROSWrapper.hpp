@@ -64,6 +64,9 @@ using TerrainGrid = vector<vector<TerrainCell>>;
 // Coordinates
 using coordinates = vector<double>;
 
+using coordinates_grid = vector<int>;
+
+
 class ROSWrapper : public rclcpp::Node
 {
     public:
@@ -110,6 +113,7 @@ class ROSWrapper : public rclcpp::Node
         TerrainGrid global_grid;
         int global_map_size;        // Size of the global map
         float resolution;           // Resolution of both local and global map
+        coordinates_grid previous_cell = {0,0};
 
         // Local map
         coordinates coordinates_local;
@@ -138,7 +142,8 @@ class ROSWrapper : public rclcpp::Node
         void lookupTransform();
         void update_window_imu(double x);
         void create_global_map();
-        void update_global_map();
+        void update_global_map(coordinates_grid offset);
+        coordinates_grid compute_offset();
         vector<double> convert_deque_vector(deque<double> input);
 
 };
