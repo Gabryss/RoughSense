@@ -156,7 +156,7 @@ void ROSWrapper::lookupTransform()
         vector<double> window_imu_vector = convert_deque_vector(window_imu);
         double roughness_imu = roughness.CalculateStd(window_imu_vector);
         RCLCPP_WARN(this->get_logger(), "current_x: %.3d, current_y: %.3d, roughness: %.3f", current_cell[0], current_cell[1], roughness_imu);
-        vector<long unsigned int> robot_imu_coordinates = {current_cell[0] + (roughness.TGridLocal.size()/2), current_cell[1] + (roughness.TGridLocal.size()/2)};
+        vector<long unsigned int> robot_imu_coordinates = {previous_cell[0] + (roughness.TGridLocal.size()/2), previous_cell[1] + (roughness.TGridLocal.size()/2)};
         
         global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][1] = roughness_imu;
       }
