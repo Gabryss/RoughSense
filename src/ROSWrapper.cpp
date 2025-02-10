@@ -21,8 +21,14 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     get_parameters(path_parameters);
     debug_info = p["debug_info"].GetBool();
     debug_time_s = p["debug_time_s"].GetInt();
+    global_map_size = p["global_map_size"].GetFloat();
+    resolution = p["map_resolution"].GetFloat();
 
 
+    // =====================================================
+    // Initialize global map
+    // =====================================================
+    this->create_global_map();
 
     // =====================================================
     // TRANSFORM
@@ -48,12 +54,15 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     
 
     // Create publishers
-    pub_roughness_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>(p["roughness_topic"].GetString(), 10);
+    pub_roughness_local_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>(p["roughness_topic_local"].GetString(), 10);
+
+    pub_roughness_global_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>(p["roughness_topic_global"].GetString(), 10);
+
 
     // Set roughness parameters
-    roughness.resolution = p["map_resolution"].GetFloat();
+    roughness.resolution = resolution;
     roughness.globalGrid.resolution = p["map_resolution"].GetFloat();
-    roughness.local_size = p["map_size"].GetFloat();
+    roughness.local_size = p["local_map_size"].GetFloat();
     roughness.stylized=p["map_unknown_transparency"].GetBool();
     roughness.ransac_iterations=p["ransac_iterations"].GetInt();
     roughness.roughness_threshold=p["roughness_threshold"].GetFloat();
@@ -138,8 +147,6 @@ void ROSWrapper::lookupTransform()
       // Lookup transform from 'odom' to 'base_link'
       transform_stamped = tf_buffer_->lookupTransform("map", "base_footprint", tf2::TimePointZero);
       roughness.pose = {transform_stamped.transform.translation.x, transform_stamped.transform.translation.y, transform_stamped.transform.translation.z};
-      RCLCPP_INFO(this->get_logger(), "Pose X: %.3f Pose Y: %.3f Pose Z: %.3f", roughness.pose[0], roughness.pose[1], roughness.pose[2]);
-
 
       // Calculate the IMU roughness
       vector<double> window_imu_vector = convert_deque_vector(window_imu);
@@ -149,14 +156,10 @@ void ROSWrapper::lookupTransform()
       if(cloud->size()>0)
       {
         roughness.CalculatePCRoughness(cloud);
-        roughness.FillTGridGlobal(roughness.pose[0], roughness.pose[1]); // Fill the global map
-        Mat image_local_roughness = roughness.image_local_roughness;
-        Mat image_global_roughness = roughness.image_global_roughness;
-
-        float resolution = roughness.resolution;
-        float size_w = roughness.globalGrid.grid.size();
-        float size_h = roughness.globalGrid.grid[0].size();
-        publish_roughness_map(image_global_roughness, resolution, size_w, size_h, roughness.globalGrid.originRow, roughness.globalGrid.originCol);
+        coordinates_local = {roughness.pose[0], roughness.pose[1]};
+        update_global_map();
+        publish_roughness_map(roughness.TGridLocal, true);
+        publish_roughness_map(global_grid, false);
       }
       else
       {
@@ -183,43 +186,58 @@ void ROSWrapper::lookupTransform()
 // PUBLISHER
 // =====================================================
 
-void ROSWrapper::publish_roughness_map(const Mat &image, float resolution, float size_w, float size_h, int origin_x, int origin_y)
+void ROSWrapper::publish_roughness_map(const TerrainGrid &grid, bool is_local)
 {
-    // int width = size / resolution;
-
-    // Create a vector to hold the data from the Mat (int8_t means signed char)
-    std::vector<int8_t> static_map_cell_values(image.rows * image.cols);
-
-    // Copy the data from cv::Mat to std::vector<int8_t>
-    for (int i = 0; i < image.rows * image.cols; ++i) {
-        static_map_cell_values[i] = static_cast<int8_t>(image.data[i]);
-    }
-    size_t num_elements = image.total() * image.elemSize();
-
-
     nav_msgs::msg::OccupancyGrid occupancy_grid;
     nav_msgs::msg::MapMetaData map_meta_data;
     map_meta_data.map_load_time = this->now();
     map_meta_data.resolution = resolution;
-    map_meta_data.width =  roughness.globalGrid.grid.size();
-    map_meta_data.height = roughness.globalGrid.grid[0].size();
-    map_meta_data.origin.position.x = 0;
-    map_meta_data.origin.position.y = 0;
+    map_meta_data.width =  grid.size();
+    map_meta_data.height = grid[0].size();
+
+    if (is_local)
+    {
+      map_meta_data.origin.position.x = (-(grid.size()*resolution)/2) + coordinates_local[0];
+      map_meta_data.origin.position.y = (-(grid[0].size()*resolution)/2) + coordinates_local[1];
+    }
+    else
+    {
+      map_meta_data.origin.position.x = -(grid.size()*resolution)/2;
+      map_meta_data.origin.position.y = -(grid[0].size()*resolution)/2;
+    }
     map_meta_data.origin.position.z = transform_stamped.transform.translation.z;
+
     map_meta_data.origin.orientation.x= 0.7071068;
     map_meta_data.origin.orientation.y= 0.7071068;
+
     map_meta_data.origin.orientation.z= 0.0;
     map_meta_data.origin.orientation.w= 0.0;
-
 
     
     occupancy_grid.header.stamp = this->now();
     occupancy_grid.header.frame_id = p["roughness_frame_id"].GetString();
     occupancy_grid.info = map_meta_data;
     occupancy_grid.data.resize(map_meta_data.width * map_meta_data.height);
-    occupancy_grid.data = static_map_cell_values;
 
-    pub_roughness_->publish(occupancy_grid);
+    // Fill the occupancy_grid with data
+    // Fill the OccupancyGrid message.
+    for (unsigned int y = 0; y < map_meta_data.height; ++y) 
+    {
+      for (unsigned int x = 0; x < map_meta_data.width; ++x) 
+      {
+        unsigned int index = y * map_meta_data.width + x;
+        occupancy_grid.data[index] = grid[y][x][0];                    // Fill data
+      }
+    }
+
+    if(is_local)
+    {
+      pub_roughness_local_->publish(occupancy_grid);
+    }
+    else
+    {
+      pub_roughness_global_->publish(occupancy_grid);
+    }
 };
 
 
@@ -339,6 +357,66 @@ vector<double> ROSWrapper::convert_deque_vector(deque<double> input)
   return output;
 };
 
+
+// Create global map
+void ROSWrapper::create_global_map()
+{
+  unsigned int nb_cells = static_cast<unsigned int>(global_map_size/resolution);
+
+  global_grid.clear();
+  global_grid.resize(nb_cells);
+  for(int ind_x=0; ind_x<nb_cells; ind_x++)
+  {
+      global_grid[ind_x].resize(nb_cells);
+      for(int ind_y=0; ind_y<nb_cells; ind_y++)
+      {
+          global_grid[ind_x][ind_y].resize(2);
+          global_grid[ind_x][ind_y][0] = 0.0;
+          global_grid[ind_x][ind_y][1] = 0.0;
+      }
+  }
+};
+
+
+// Update global map
+void ROSWrapper::update_global_map()
+{
+
+  // Local origin
+  double local_origin_x =  (coordinates_local[0]) - (roughness.local_size / 2); // In meter
+  double local_origin_y =  (coordinates_local[1]) - (roughness.local_size / 2); // In meter
+
+  double global_origin = -(global_map_size) / 2; // In meter
+
+  // Compute offset
+  int offset_x = static_cast<int>((local_origin_x - global_origin)/resolution);
+  int offset_y = static_cast<int>((local_origin_y - global_origin)/resolution);
+
+
+  // Loop on each cell of the local grid
+  for(int ind_x=0; ind_x<roughness.TGridLocal.size(); ind_x++)
+  {
+    for(int ind_y=0; ind_y<roughness.TGridLocal[0].size(); ind_y++)
+    {
+
+      // Compute the corresponding global grid cell.
+      int global_x = ind_x + offset_x;
+      int global_y = ind_y + offset_y;
+
+      // Check if the computed global cell is within the bounds of the global grid.&
+      if (global_x < 0 || global_x >= static_cast<int>(global_grid.size()) ||
+          global_y < 0 || global_y >= static_cast<int>(global_grid.size()))
+      {
+        // Skip cells that fall outside the global grid.
+        RCLCPP_ERROR(this->get_logger(), "Error: Local grid outside the global grid.");
+        continue;
+      }
+
+      // Fill the global grid
+      global_grid[global_x][global_y][0] = roughness.TGridLocal[ind_x][ind_y][0];
+    }
+  }
+};
 
 
 // =====================================================

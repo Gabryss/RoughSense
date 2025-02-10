@@ -56,11 +56,13 @@ using std::placeholders::_1;
 using namespace std::chrono_literals;
 using namespace cv;
 
-// Each cell is a vector<double> of size 3 representing terrain state.
+// Each cell is a vector<double> of size 2 representing terrain state.
 using TerrainCell = vector<double>;  
 // The global grid is a 2D grid where each cell is a TerrainCell.
 using TerrainGrid = vector<vector<TerrainCell>>;
 
+// Coordinates
+using coordinates = vector<double>;
 
 class ROSWrapper : public rclcpp::Node
 {
@@ -80,7 +82,7 @@ class ROSWrapper : public rclcpp::Node
         // ===========================
         void pc_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
         void imu_callback(const sensor_msgs::msg::Imu &msg);
-        void publish_roughness_map(const Mat &image, float resolution, float size_w, float size_h, int origin_x, int origin_y);
+        void publish_roughness_map(const TerrainGrid &grid, bool is_local);
         void simulate_sinusoid_signal();
         void save_filtered_data();
 
@@ -93,7 +95,8 @@ class ROSWrapper : public rclcpp::Node
         // ROS 2
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_pc_;
         rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu_;
-        rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr pub_roughness_;
+        rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr pub_roughness_local_;
+        rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr pub_roughness_global_;
         rclcpp::TimerBase::SharedPtr timer_;
 
         std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
@@ -103,8 +106,13 @@ class ROSWrapper : public rclcpp::Node
         // Roughness
         Roughness roughness;
 
-        // Saved global map
+        // Global map
         TerrainGrid global_grid;
+        int global_map_size;        // Size of the global map
+        float resolution;           // Resolution of both local and global map
+
+        // Local map
+        coordinates coordinates_local;
 
         // Notch bandstop filter;
         std::shared_ptr<Dsp> DSP_;
@@ -129,6 +137,8 @@ class ROSWrapper : public rclcpp::Node
         void get_parameters(std::string parameters_path);
         void lookupTransform();
         void update_window_imu(double x);
+        void create_global_map();
+        void update_global_map();
         vector<double> convert_deque_vector(deque<double> input);
 
 };
