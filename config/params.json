@@ -7,14 +7,16 @@
     "height":1,
 
     "map_resolution":0.1,
-    "map_size":5,
+    "local_map_size":5,
+    "global_map_size":200,
     "map_unknown_transparency":false,
     "map_low_resolution_division_factor":4,
 
     "ransac_iterations":100,
 
     "roughness_frame_id":"map",
-    "roughness_topic": "/roughness_costmap",
+    "roughness_topic_global": "/roughness_costmap",
+    "roughness_topic_local": "/roughness_costmap_local",
     "roughness_threshold": 0.2,
     "roughness_shift":0.003,
 
