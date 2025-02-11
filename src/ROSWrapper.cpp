@@ -149,16 +149,26 @@ void ROSWrapper::lookupTransform()
       roughness.pose = {transform_stamped.transform.translation.x, transform_stamped.transform.translation.y, transform_stamped.transform.translation.z};
 
       coordinates_grid current_cell = compute_offset();
+
+      
       // Calculate the IMU roughness
-      // coordinates_grid new_cell = {cell_indx, cell_indy};
       if (current_cell != previous_cell)
       {
         vector<double> window_imu_vector = convert_deque_vector(window_imu);
         double roughness_imu = roughness.CalculateStd(window_imu_vector);
         RCLCPP_WARN(this->get_logger(), "current_x: %.3d, current_y: %.3d, roughness: %.3f", current_cell[0], current_cell[1], roughness_imu);
         vector<long unsigned int> robot_imu_coordinates = {previous_cell[0] + (roughness.TGridLocal.size()/2), previous_cell[1] + (roughness.TGridLocal.size()/2)};
-        
+        // Check if the computed global cell is within the bounds of the global grid.&
+        if (robot_imu_coordinates[0] < 0 || robot_imu_coordinates[0] >= static_cast<int>(global_grid.size()) ||
+            robot_imu_coordinates[1] < 0 || robot_imu_coordinates[1] >= static_cast<int>(global_grid.size()))
+        {
+          // Skip cells that fall outside the global grid.
+          RCLCPP_ERROR(this->get_logger(), "Error: Local grid outside the global grid.");
+        }
+        else
+        {
         global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][1] = roughness_imu;
+        }
       }
 
       // Calculate the point cloud roughness
