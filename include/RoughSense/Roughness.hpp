@@ -80,6 +80,7 @@ class Roughness
         // Methods
         // ===========================
         double CalculateStd(vector<double>& distances);
+        double roughness_normalization(double value, float threshold);
         double calculateNorm(double linear_accel_x, double linear_accel_y, double linear_accel_z);
 
         //Main method
@@ -106,6 +107,5 @@ class Roughness
         void CreatePCGrid(int nb_cells);
         void FillPCGrid();
         void FillTGridLocal();
-        double roughness_normalization(double value, float threshold);
 
 };
