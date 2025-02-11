@@ -26,6 +26,7 @@
 //ROS
 #include <rclcpp/rclcpp.hpp>
 #include "sensor_msgs/msg/point_cloud2.hpp"
+#include "geometry_msgs/msg/twist.hpp"
 #include "nav2_msgs/msg/costmap.hpp"
 #include "nav2_msgs/msg/costmap_meta_data.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
@@ -47,7 +48,6 @@
 // OPENCV
 #include <opencv2/opencv.hpp>
 
-
 // Custom library
 #include "Roughness.hpp"
 #include "Dsp.hpp"
@@ -55,6 +55,7 @@
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 using namespace cv;
+using namespace cv::ml;
 
 // Each cell is a vector<double> of size 2 representing terrain state.
 using TerrainCell = vector<double>;  
@@ -79,15 +80,34 @@ class ROSWrapper : public rclcpp::Node
         vector<double> filteredData;
         vector<double> rawData;
         
+        vector<double> roughness_vector_lidar;
+        vector<double> roughness_vector_imu;
+        vector<double> velocity_vector_imu;
+
+
+        // Weight
+        double w_k = 1.0;               // Initial weight estimate
+        double alpha_0 = 0.1;           // Initial learning rate
+        double lambda_decay = 0.02;     // Controls decay rate
+        double beta = 0.9;              // Smoothing factor for error tracking
+        double error_moving_avg = 0;    // Track error trend
+
+
+        // Create Random Forest model
+        Ptr<RTrees> rf = RTrees::create();
+
 
         // ===========================
         // Methods
         // ===========================
         void pc_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+        void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
         void imu_callback(const sensor_msgs::msg::Imu &msg);
         void publish_roughness_map(const TerrainGrid &grid, bool is_local);
         void simulate_sinusoid_signal();
         void save_filtered_data();
+        void save_roughness_data();
+
 
 
 
@@ -97,6 +117,8 @@ class ROSWrapper : public rclcpp::Node
         // ===========================
         // ROS 2
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_pc_;
+        rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr sub_cmd_vel_;
+
         rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu_;
         rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr pub_roughness_local_;
         rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr pub_roughness_global_;
@@ -134,6 +156,7 @@ class ROSWrapper : public rclcpp::Node
         deque<double> window_imu;   // IMU window
         int debug_time_s;           // In seconds
         int temp_timer = 0;
+        double velocity_norm;       // Spo
         
         // ===========================
         // Methods
@@ -143,6 +166,8 @@ class ROSWrapper : public rclcpp::Node
         void update_window_imu(double x);
         void create_global_map();
         void update_global_map(coordinates_grid offset);
+        double updateWeight(double w_k, double x_k, double y_k, double alpha_0, 
+                    double lambda_decay, double beta, double& error_moving_avg, int time); 
         coordinates_grid compute_offset();
         vector<double> convert_deque_vector(deque<double> input);
 
