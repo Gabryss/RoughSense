@@ -42,6 +42,14 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
       std::bind(&ROSWrapper::lookupTransform, this)
     );
 
+    // =====================================================
+    // SPEED
+    // =====================================================
+    // Subscribe to the point cloud topic    
+    sub_cmd_vel_ = this->create_subscription<geometry_msgs::msg::Twist>(
+     p["cmd_vel_topic"].GetString(), 10, std::bind(&ROSWrapper::cmd_vel_callback, this, _1));
+    
+
 
     // =====================================================
     // POINT CLOUD
@@ -92,6 +100,7 @@ ROSWrapper::~ROSWrapper()
   if(debug_info)
   {
     save_filtered_data();
+    save_roughness_data();
   }
 };
 
@@ -108,6 +117,17 @@ void ROSWrapper::pc_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     pcl::fromROSMsg(*msg, *cloud);
     RCLCPP_INFO(this->get_logger(), "New map received");
 };
+
+
+void ROSWrapper::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
+{
+    double norm_linear = roughness.calculateNorm(msg->linear.x, msg->linear.y, msg->linear.z);
+    double norm_angular = roughness.calculateNorm(msg->angular.x, msg->angular.y, msg->angular.z);
+    velocity_norm = norm_linear + norm_angular;
+
+    // RCLCPP_INFO(this->get_logger(), "Test: %.3f", norm);
+};
+
 
 void ROSWrapper::imu_callback(const sensor_msgs::msg::Imu &msg)
 {
@@ -150,14 +170,15 @@ void ROSWrapper::lookupTransform()
 
       coordinates_grid current_cell = compute_offset();
 
-      
+
       // Calculate the IMU roughness
       if (current_cell != previous_cell)
       {
         vector<double> window_imu_vector = convert_deque_vector(window_imu);
-        double roughness_imu = roughness.CalculateStd(window_imu_vector);
-        RCLCPP_WARN(this->get_logger(), "current_x: %.3d, current_y: %.3d, roughness: %.3f", current_cell[0], current_cell[1], roughness_imu);
+        double std = roughness.CalculateStd(window_imu_vector);
+        double roughness_imu = roughness.roughness_normalization(std, roughness.roughness_threshold);
         vector<long unsigned int> robot_imu_coordinates = {previous_cell[0] + (roughness.TGridLocal.size()/2), previous_cell[1] + (roughness.TGridLocal.size()/2)};
+        
         // Check if the computed global cell is within the bounds of the global grid.&
         if (robot_imu_coordinates[0] < 0 || robot_imu_coordinates[0] >= static_cast<int>(global_grid.size()) ||
             robot_imu_coordinates[1] < 0 || robot_imu_coordinates[1] >= static_cast<int>(global_grid.size()))
@@ -167,7 +188,13 @@ void ROSWrapper::lookupTransform()
         }
         else
         {
-        global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][1] = roughness_imu;
+          global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][1] = roughness_imu;
+          roughness_vector_imu.push_back(std);
+          // roughness_vector_lidar.push_back(global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][0]);
+          roughness_vector_lidar.push_back(global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][0]);
+
+          velocity_vector_imu.push_back(velocity_norm);
+          RCLCPP_ERROR(this->get_logger(), "LiDAR: %.3f, IMU: %.3f", global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][0], std);
         }
       }
 
@@ -245,7 +272,7 @@ void ROSWrapper::publish_roughness_map(const TerrainGrid &grid, bool is_local)
       for (unsigned int x = 0; x < map_meta_data.width; ++x) 
       {
         unsigned int index = y * map_meta_data.width + x;
-        occupancy_grid.data[index] = grid[y][x][1]*100;                    // Fill data
+        occupancy_grid.data[index] = grid[y][x][0];                    // Fill data
       }
     }
 
@@ -260,6 +287,32 @@ void ROSWrapper::publish_roughness_map(const TerrainGrid &grid, bool is_local)
 };
 
 
+
+// =====================================================
+// Update prediction weights
+// =====================================================
+
+
+double ROSWrapper::updateWeight(double w_k, double lidar_k, double imu_k, double alpha_0, 
+                    double lambda_decay, double beta, double& error_moving_avg, int time) 
+{
+    const double epsilon = 1e-5;  // Small value to prevent division by zero
+
+    // Compute current error
+    double error_k = fabs(imu_k - w_k * lidar_k);
+
+    // Update moving average of error
+    error_moving_avg = beta * error_moving_avg + (1 - beta) * error_k;
+
+    // Compute adaptive learning rate
+    double alpha_k = alpha_0 / (1 + lambda_decay * k);      // Time-based decay
+    alpha_k *= error_k / (max(error_moving_avg, epsilon));  // Error-based scaling
+
+    // Update weight
+    w_k = w_k + alpha_k * (imu_k - w_k * lidar_k);
+
+    return w_k;
+};
 
 
 // =====================================================
@@ -363,6 +416,31 @@ void ROSWrapper::save_filtered_data()
 };
 
 
+// Save IMU and LiDAR roughness for analysis
+void ROSWrapper::save_roughness_data()
+{
+  // Open an output file stream (CSV file).
+  std::ofstream outFile("data_roughness.csv");
+  if (!outFile.is_open()) 
+  {
+      RCLCPP_ERROR(this->get_logger(), "Error opening file for writing.");
+      return;
+  }
+
+  // Write a header row (optional).
+  outFile << "Index,LiDAR,IMU,SPEED\n";
+
+  // Write data row by row.
+  for (size_t i = 0; i < this->roughness_vector_lidar.size(); i++) 
+  {
+      outFile << i << "," << this->roughness_vector_lidar[i] << "," << this->roughness_vector_imu[i] << "," << this->velocity_vector_imu[i] << "\n";
+  }
+
+  outFile.close();
+  RCLCPP_INFO(this->get_logger(), "Filtered data saved to filtered_data.csv");
+};
+
+
 // Convert a deque of double into a vector of double
 vector<double> ROSWrapper::convert_deque_vector(deque<double> input)
 {
@@ -440,8 +518,6 @@ coordinates_grid ROSWrapper::compute_offset()
     // Compute offset
     int cell_indx = static_cast<int>((local_origin_x - global_origin)/resolution);
     int cell_indy = static_cast<int>((local_origin_y - global_origin)/resolution);
-    RCLCPP_INFO(this->get_logger(), "cell_indx: %.3d cell_indy: %.3d", cell_indx, cell_indy);
-
     return {cell_indx, cell_indy};
 };
 
