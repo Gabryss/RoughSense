@@ -166,8 +166,7 @@ class ROSWrapper : public rclcpp::Node
         void update_window_imu(double x);
         void create_global_map();
         void update_global_map(coordinates_grid offset);
-        double updateWeight(double w_k, double x_k, double y_k, double alpha_0, 
-                    double lambda_decay, double beta, double& error_moving_avg, int time); 
+        double updateWeight(double lidar_k, double imu_k, int time); 
         coordinates_grid compute_offset();
         vector<double> convert_deque_vector(deque<double> input);
 

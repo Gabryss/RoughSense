@@ -24,6 +24,14 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     global_map_size = p["global_map_size"].GetFloat();
     resolution = p["map_resolution"].GetFloat();
 
+    w_k = p["w_k"].GetFloat();
+    alpha_0 = p["alpha_0"].GetFloat();
+    lambda_decay = p["lambda_decay"].GetFloat();
+    beta = p["beta"].GetFloat();
+    error_moving_avg = p["error_moving_avg"].GetFloat();
+
+
+
 
     // =====================================================
     // Initialize global map
@@ -188,7 +196,8 @@ void ROSWrapper::lookupTransform()
         }
         else
         {
-          global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][1] = roughness_imu;
+          global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][1] = std;
+          updateWeight(global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][0], global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][1], temp_timer);
           roughness_vector_imu.push_back(std);
           // roughness_vector_lidar.push_back(global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][0]);
           roughness_vector_lidar.push_back(global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][0]);
@@ -292,9 +301,7 @@ void ROSWrapper::publish_roughness_map(const TerrainGrid &grid, bool is_local)
 // Update prediction weights
 // =====================================================
 
-
-double ROSWrapper::updateWeight(double w_k, double lidar_k, double imu_k, double alpha_0, 
-                    double lambda_decay, double beta, double& error_moving_avg, int time) 
+double ROSWrapper::updateWeight(double lidar_k, double imu_k, int time) 
 {
     const double epsilon = 1e-5;  // Small value to prevent division by zero
 
@@ -305,7 +312,7 @@ double ROSWrapper::updateWeight(double w_k, double lidar_k, double imu_k, double
     error_moving_avg = beta * error_moving_avg + (1 - beta) * error_k;
 
     // Compute adaptive learning rate
-    double alpha_k = alpha_0 / (1 + lambda_decay * k);      // Time-based decay
+    double alpha_k = alpha_0 / (1 + lambda_decay * time);      // Time-based decay
     alpha_k *= error_k / (max(error_moving_avg, epsilon));  // Error-based scaling
 
     // Update weight
@@ -325,7 +332,6 @@ void ROSWrapper::simulate_sinusoid_signal()
   RCLCPP_INFO(this->get_logger(), "Generating simulated data");
   DSP_->generate_simulated_signal();
   RCLCPP_INFO(this->get_logger(), "Size of generated data: %.3ld", DSP_->sinusoid.size());
-
   for(int i=0; i<DSP_->sinusoid.size(); i++)
   {
     complex<float> input(DSP_->sinusoid[i], 0.0f);
@@ -500,7 +506,7 @@ void ROSWrapper::update_global_map(coordinates_grid offset)
       }
 
       // Fill the global grid
-      global_grid[global_x][global_y][0] = roughness.TGridLocal[ind_x][ind_y][0];
+      global_grid[global_x][global_y][0] = roughness.TGridLocal[ind_x][ind_y][0] * w_k;
     }
   }
 };

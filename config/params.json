@@ -25,5 +25,11 @@
     "imu_topic": "/imu/data_raw",
     "imu_sampling_frequency":200,
     "imu_filter_frequency":27.5,
-    "imu_filter_bandwidth":5.0
+    "imu_filter_bandwidth":5.0,
+
+    "w_k":1.0,
+    "alpha_0":0.1,
+    "lambda_decay":0.02,
+    "beta":0.9,
+    "error_moving_avg":0.0
 }
