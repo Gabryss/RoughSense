@@ -27,7 +27,7 @@ void Roughness::CalculatePCRoughness(pcl::PointCloud<pcl::PointXYZI>::Ptr Data_i
     CreateTGridLocal(nb_cells);
     FillPCGrid();
     FillTGridLocal();
-    image_local_roughness = map_creator.MakeMap(TGridLocal, 0);
+    // image_local_roughness = map_creator.MakeMap(TGridLocal, 0);
 };
 
 
@@ -82,12 +82,13 @@ void Roughness::FillPCGrid()
 {
     //Fill each cell with the coresponding point from the input point cloud
     //All the points outside the map are discarded
+    int local_center = local_size/2;
     for(unsigned int i = 0; i < cloud->points.size(); i++)
     {
-        if(((pose[0]-(local_size/2)) < cloud->points[i].x) && (cloud->points[i].x < (pose[0]+(local_size/2))) && ((pose[1]-(local_size/2)) < cloud->points[i].y) && (cloud->points[i].y < (pose[1]+(local_size/2))) && ( cloud->points[i].z < (height+pose[2])))
+        if(((pose[0]-local_center) < cloud->points[i].x) && (cloud->points[i].x < (pose[0]+local_center)) && ((pose[1]-local_center) < cloud->points[i].y) && (cloud->points[i].y < (pose[1]+local_center)) && ( cloud->points[i].z < (height+pose[2])))
         {
-            unsigned int indx = static_cast<unsigned int>((cloud->points[i].x - (pose[0]-(local_size/2))) / (local_size) * (local_size / resolution));
-            unsigned int indy = static_cast<unsigned int>((cloud->points[i].y - (pose[1]-(local_size/2))) / (local_size) * (local_size / resolution));
+            unsigned int indx = static_cast<unsigned int>((cloud->points[i].x - (pose[0]-local_center)) / (local_size) * (local_size / resolution));
+            unsigned int indy = static_cast<unsigned int>((cloud->points[i].y - (pose[1]-local_center)) / (local_size) * (local_size / resolution));
 
 
             // Edge case for odd numbers
@@ -158,7 +159,8 @@ void Roughness::FillTGridLocal()
                 double std = CalculateStd(ransac.distances);
                 
                 // Roughness grid
-                TGridLocal[ind_x][ind_y][0] = roughness_normalization(std, roughness_threshold);
+                // TGridLocal[ind_x][ind_y][0] = roughness_normalization(std, roughness_lidar_threshold);
+                TGridLocal[ind_x][ind_y][0] = std;
             }
 
             // Rough estimation based on the neighbors cells
@@ -168,7 +170,8 @@ void Roughness::FillTGridLocal()
                 double std = CalculateStd(ransac.distances);
                 
                 // Roughness grid
-                TGridLocal[ind_x][ind_y][0] = roughness_normalization(std, roughness_threshold);
+                // TGridLocal[ind_x][ind_y][0] = roughness_normalization(std, roughness_lidar_threshold);
+                TGridLocal[ind_x][ind_y][0] = std;
             }
 
             // No data result to unknown terrain
@@ -176,7 +179,7 @@ void Roughness::FillTGridLocal()
             {
                 if(!stylized)
                 {
-                    TGridLocal[ind_x][ind_y][0] = -1;
+                    TGridLocal[0][0][0] = 1.01;
                 }
             }
         }
@@ -241,26 +244,10 @@ double Roughness::calculateNorm(double linear_accel_x, double linear_accel_y, do
 // Normalize the values. (everything above the threshold get the LETHAL value).
 double Roughness::roughness_normalization(double value, float threshold)
 {
-    // Normalize the roughness between 0 and 100
-    // Any value above the threshold will be applied with the LETHAL value (100)
-    double normalized_value;
-    if (value >= threshold)
-    {
-        normalized_value = LETHAL;
-    }
-    else
-    {
-        if(value < min_roughness)
-        {
-            min_roughness = value;
-        }
-        // normalized_value = (((value + roughness_shift )/ threshold)*100);
-        normalized_value = (((value - min_roughness )/ (threshold-min_roughness))*100);
-
-    }
-
-    return normalized_value;
+    if (threshold == 0) return 0.0; // Prevent division by zero
+    return std::clamp(value / threshold, 0.0, 1.0);
 };
+
 
 
 // Display the roughness (traversability) grid in the terminal
@@ -328,4 +315,116 @@ void Roughness::TestGrid()
     globalGrid.print();
 
     return;
+};
+
+
+
+// void Roughness::SaveLocalGridState()
+// {
+    
+//     if (PCGrid.empty()) {
+//         cerr << "The local grid is not initialized " << endl;
+//         return;
+//     }
+
+//     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZI>);
+    
+//     for (size_t indz = 0; indz < PCGrid[indx][indy].size(); ++indz) 
+//     {
+//         cloud->points.push_back(PCGrid[indx][indy][indz]);
+//     }
+    
+//     cloud->width = cloud->points.size();
+//     cloud->height = 1;
+//     cloud->is_dense = true;
+    
+//     stringstream filename;
+//     filename << "data/pc_cells/cell_" << indx << "_" << indy << ".pcd";
+    
+//     if (pcl::io::savePCDFileASCII(filename.str(), *cloud) == -1) {
+//         PCL_ERROR("Could not write PCD file.\n");
+//     } else {
+//         cout << "Saved cell data to " << filename.str() << endl;
+//     }
+// };
+
+
+
+
+void Roughness::saveCellToPCD(const vector<vector<vector<pcl::PointXYZI>>>& PCGrid, size_t indx, size_t indy) {
+    if (indx >= PCGrid.size() || indy >= PCGrid[indx].size()) {
+        cerr << "Invalid indices for X and Y dimensions." << endl;
+        return;
+    }
+
+    if (PCGrid[indx][indy].empty()) {
+        cerr << "No points available in the selected cell (" << indx << ", " << indy << ")." << endl;
+        return;
+    }
+
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZI>);
+
+    for (const auto& point : PCGrid[indx][indy]) 
+    {
+        cloud->points.push_back(point);
+    }
+
+    cloud->width = cloud->points.size();
+    cloud->height = 1;
+    cloud->is_dense = true;
+
+    stringstream filename;
+    filename << "data/pc_cells/cell_" << indx << "_" << indy << ".pcd";
+
+    if (pcl::io::savePCDFileASCII(filename.str(), *cloud) == -1) 
+    {
+        PCL_ERROR("Could not write PCD file.\n");
+    } else {
+        cout << "Saved cell data to " << filename.str() << endl;
+    }
+};
+
+void Roughness::saveEntireGridToPCD(const vector<vector<vector<pcl::PointXYZI>>>& PC_Grid) 
+{
+    vector<double> size_point_cloud;
+    vector<double> vector_std;
+    vector<int> vector_x;
+    vector<int> vector_y;
+
+    for (size_t indx = 0; indx < PC_Grid.size(); ++indx) {
+        for (size_t indy = 0; indy < PC_Grid[indx].size(); ++indy) 
+        {
+            saveCellToPCD(PC_Grid, indx, indy);
+            size_point_cloud.push_back(PC_Grid[indx][indy].size());
+            vector_x.push_back(indx);
+            vector_y.push_back(indy);
+            vector_std.push_back(TGridLocal[indx][indy][0]);
+        }
+    }
+    // Write down the metadata
+    // Open an output file stream (CSV file).
+    std::ofstream outFile("data/pc_cells/local_grid_metadata.csv");
+    if (!outFile.is_open()) 
+    {
+        cout << "LOCAL_GRID: Error while opening the metadata file"<< endl;
+        return;
+    }
+
+    // Write a header row (optional).
+    outFile << "Index,Cell_PC_size,STD_dev,X,Y\n";
+
+    // Write data row by row.
+    for (size_t i = 0; i < size_point_cloud.size(); i++) 
+    {
+        outFile << i << "," << 
+        size_point_cloud[i] << "," << 
+        vector_std[i] << "," << 
+        vector_x[i] << "," << 
+        vector_y[i]
+        << "\n";
+    }
+
+    outFile.close();
+    cout << "LOCAL_GRID: Successful save"<< endl;
+
 };

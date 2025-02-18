@@ -11,6 +11,8 @@
 #include <vector>
 #include <iostream>
 #include <cmath>
+#include <fstream>
+
 
 // PCL libraries
 #include <pcl/io/pcd_io.h>
@@ -60,7 +62,6 @@ class Roughness
         float resolution;
         int low_grid_resolution=4;
         float local_size;
-        float roughness_threshold=1;
         float roughness_shift=0;
         float height=1;
         float min_height=0;
@@ -68,6 +69,8 @@ class Roughness
         bool stylized=false;
         int ransac_iterations;
         unsigned int nb_cells;
+        float roughness_lidar_threshold=1;
+        float roughness_imu_threshold=1;
 
         // Traversability image conversion
         MapCreator map_creator;
@@ -90,6 +93,7 @@ class Roughness
         
         void DisplayGrid(); //For debug purposes
         void TestGrid();
+        void saveEntireGridToPCD(const vector<vector<vector<pcl::PointXYZI>>>& PC_Grid);
 
         
     protected:
@@ -107,5 +111,7 @@ class Roughness
         void CreatePCGrid(int nb_cells);
         void FillPCGrid();
         void FillTGridLocal();
+        void saveCellToPCD(const vector<vector<vector<pcl::PointXYZI>>>& PCGrid, size_t indx, size_t indy);
+
 
 };
