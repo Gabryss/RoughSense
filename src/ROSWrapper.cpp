@@ -19,10 +19,16 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     this->declare_parameter("param_path", "");
     std::string path_parameters = this->get_parameter("param_path").as_string();
     get_parameters(path_parameters);
+    save_data = p["save_data"].GetBool();
     debug_info = p["debug_info"].GetBool();
+    imu_correction = p["activate_imu_correction"].GetBool();
     debug_time_s = p["debug_time_s"].GetInt();
     global_map_size = p["global_map_size"].GetFloat();
     resolution = p["map_resolution"].GetFloat();
+    roughness_lidar_threshold=p["roughness_lidar_threshold"].GetFloat();
+    roughness_imu_threshold=p["roughness_imu_threshold"].GetFloat();
+    window_size = p["imu_window_size"].GetInt();
+
 
     w_k = p["w_k"].GetFloat();
     alpha_0 = p["alpha_0"].GetFloat();
@@ -81,9 +87,10 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     roughness.local_size = p["local_map_size"].GetFloat();
     roughness.stylized=p["map_unknown_transparency"].GetBool();
     roughness.ransac_iterations=p["ransac_iterations"].GetInt();
-    roughness.roughness_threshold=p["roughness_threshold"].GetFloat();
     roughness.roughness_shift=p["roughness_shift"].GetFloat();
-    roughness.height=p["height"].GetInt();
+    roughness.roughness_lidar_threshold=p["roughness_lidar_threshold"].GetFloat();
+    roughness.roughness_imu_threshold=p["roughness_imu_threshold"].GetFloat();
+    roughness.height=p["height"].GetFloat();
     roughness.low_grid_resolution=p["map_low_resolution_division_factor"].GetInt();
 
 
@@ -105,7 +112,7 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
 
 ROSWrapper::~ROSWrapper() 
 {
-  if(debug_info)
+  if(save_data)
   {
     save_filtered_data();
     save_roughness_data();
@@ -132,8 +139,6 @@ void ROSWrapper::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg
     double norm_linear = roughness.calculateNorm(msg->linear.x, msg->linear.y, msg->linear.z);
     double norm_angular = roughness.calculateNorm(msg->angular.x, msg->angular.y, msg->angular.z);
     velocity_norm = norm_linear + norm_angular;
-
-    // RCLCPP_INFO(this->get_logger(), "Test: %.3f", norm);
 };
 
 
@@ -175,46 +180,46 @@ void ROSWrapper::lookupTransform()
       // Lookup transform from 'odom' to 'base_link'
       transform_stamped = tf_buffer_->lookupTransform("map", "base_footprint", tf2::TimePointZero);
       roughness.pose = {transform_stamped.transform.translation.x, transform_stamped.transform.translation.y, transform_stamped.transform.translation.z};
+      coordinates_local = {roughness.pose[0], roughness.pose[1]};
 
       coordinates_grid current_cell = compute_offset();
 
-
-      // Calculate the IMU roughness
-      if (current_cell != previous_cell)
-      {
-        vector<double> window_imu_vector = convert_deque_vector(window_imu);
-        double std = roughness.CalculateStd(window_imu_vector);
-        double roughness_imu = roughness.roughness_normalization(std, roughness.roughness_threshold);
-        vector<long unsigned int> robot_imu_coordinates = {previous_cell[0] + (roughness.TGridLocal.size()/2), previous_cell[1] + (roughness.TGridLocal.size()/2)};
-        
-        // Check if the computed global cell is within the bounds of the global grid.&
-        if (robot_imu_coordinates[0] < 0 || robot_imu_coordinates[0] >= static_cast<int>(global_grid.size()) ||
-            robot_imu_coordinates[1] < 0 || robot_imu_coordinates[1] >= static_cast<int>(global_grid.size()))
-        {
-          // Skip cells that fall outside the global grid.
-          RCLCPP_ERROR(this->get_logger(), "Error: Local grid outside the global grid.");
-        }
-        else
-        {
-          global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][1] = std;
-          updateWeight(global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][0], global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][1], temp_timer);
-          roughness_vector_imu.push_back(std);
-          // roughness_vector_lidar.push_back(global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][0]);
-          roughness_vector_lidar.push_back(global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][0]);
-
-          velocity_vector_imu.push_back(velocity_norm);
-          RCLCPP_ERROR(this->get_logger(), "LiDAR: %.3f, IMU: %.3f", global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][0], std);
-        }
-      }
-
       // Calculate the point cloud roughness
-      if(cloud->size()>0)
+      if(cloud->size()>3 && (current_cell != previous_cell))
       {
-        roughness.CalculatePCRoughness(cloud);
-        coordinates_local = {roughness.pose[0], roughness.pose[1]};
-        update_global_map(current_cell);
-        publish_roughness_map(roughness.TGridLocal, true);
-        publish_roughness_map(global_grid, false);
+          roughness.CalculatePCRoughness(cloud);
+          roughness.saveEntireGridToPCD(roughness.PCGrid);
+
+          // Calculate the IMU roughness
+          vector<double> window_imu_vector = convert_deque_vector(window_imu);
+          vector<double> window_imu_vector_speed_normalized = speed_normalization(window_imu_vector);
+          double roughness_imu = roughness.CalculateStd(window_imu_vector);
+          double roughness_imu_normalized = roughness.roughness_normalization(roughness_imu, roughness.roughness_imu_threshold);
+
+          long unsigned int local_grid_center = roughness.TGridLocal.size()/2;
+
+          robot_imu_coordinates = {previous_cell[0] + local_grid_center, previous_cell[1] + local_grid_center};
+          
+          // Check if the computed global cell is within the bounds of the global grid.&
+          if (robot_imu_coordinates[0] < 0 || robot_imu_coordinates[0] >= static_cast<int>(global_grid.size()) ||
+              robot_imu_coordinates[1] < 0 || robot_imu_coordinates[1] >= static_cast<int>(global_grid.size()))
+          {
+            // Skip cells that fall outside the global grid.
+            RCLCPP_ERROR(this->get_logger(), "Error: Local grid outside the global grid.");
+          }
+          else
+          {
+            RCLCPP_WARN(this->get_logger(), "IMU is going to be attributed %.3li, %.3li", local_grid_center, local_grid_center);
+            roughness.TGridLocal[local_grid_center][local_grid_center][1] = roughness_imu;
+            global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][1] = roughness_imu_normalized;
+            last_imu_roughness = roughness_imu_normalized;
+          }
+        
+          update_global_map(current_cell);
+          
+          // Publish maps
+          publish_roughness_map(roughness.TGridLocal, true);  // Local map
+          publish_roughness_map(global_grid, false);          // Global map
       }
       else
       {
@@ -250,15 +255,19 @@ void ROSWrapper::publish_roughness_map(const TerrainGrid &grid, bool is_local)
     map_meta_data.width =  grid.size();
     map_meta_data.height = grid[0].size();
 
+    int center_coordinates_x = -(grid.size()*resolution)/2;
+    int center_coordinates_y = -(grid[0].size()*resolution)/2;
+
+
     if (is_local)
     {
-      map_meta_data.origin.position.x = (-(grid.size()*resolution)/2) + coordinates_local[0];
-      map_meta_data.origin.position.y = (-(grid[0].size()*resolution)/2) + coordinates_local[1];
+      map_meta_data.origin.position.x = center_coordinates_x + coordinates_local[0];
+      map_meta_data.origin.position.y = center_coordinates_y + coordinates_local[1];
     }
     else
     {
-      map_meta_data.origin.position.x = -(grid.size()*resolution)/2;
-      map_meta_data.origin.position.y = -(grid[0].size()*resolution)/2;
+      map_meta_data.origin.position.x = center_coordinates_x;
+      map_meta_data.origin.position.y = center_coordinates_y;
     }
     map_meta_data.origin.position.z = transform_stamped.transform.translation.z;
 
@@ -281,7 +290,7 @@ void ROSWrapper::publish_roughness_map(const TerrainGrid &grid, bool is_local)
       for (unsigned int x = 0; x < map_meta_data.width; ++x) 
       {
         unsigned int index = y * map_meta_data.width + x;
-        occupancy_grid.data[index] = grid[y][x][0];                    // Fill data
+        occupancy_grid.data[index] = grid[y][x][0]*100;                    // Fill data
       }
     }
 
@@ -296,30 +305,6 @@ void ROSWrapper::publish_roughness_map(const TerrainGrid &grid, bool is_local)
 };
 
 
-
-// =====================================================
-// Update prediction weights
-// =====================================================
-
-double ROSWrapper::updateWeight(double lidar_k, double imu_k, int time) 
-{
-    const double epsilon = 1e-5;  // Small value to prevent division by zero
-
-    // Compute current error
-    double error_k = fabs(imu_k - w_k * lidar_k);
-
-    // Update moving average of error
-    error_moving_avg = beta * error_moving_avg + (1 - beta) * error_k;
-
-    // Compute adaptive learning rate
-    double alpha_k = alpha_0 / (1 + lambda_decay * time);      // Time-based decay
-    alpha_k *= error_k / (max(error_moving_avg, epsilon));  // Error-based scaling
-
-    // Update weight
-    w_k = w_k + alpha_k * (imu_k - w_k * lidar_k);
-
-    return w_k;
-};
 
 
 // =====================================================
@@ -401,7 +386,7 @@ void ROSWrapper::get_parameters(std::string parameters_path)
 void ROSWrapper::save_filtered_data()
 {
   // Open an output file stream (CSV file).
-  std::ofstream outFile("data_exp.csv");
+  std::ofstream outFile("data_imu_filtering.csv");
   if (!outFile.is_open()) 
   {
       RCLCPP_ERROR(this->get_logger(), "Error opening file for writing.");
@@ -418,7 +403,7 @@ void ROSWrapper::save_filtered_data()
   }
 
   outFile.close();
-  RCLCPP_INFO(this->get_logger(), "Filtered data saved to filtered_data.csv");
+  RCLCPP_INFO(this->get_logger(), "Filtered data saved to data_imu_filtering.csv");
 };
 
 
@@ -426,7 +411,7 @@ void ROSWrapper::save_filtered_data()
 void ROSWrapper::save_roughness_data()
 {
   // Open an output file stream (CSV file).
-  std::ofstream outFile("data_roughness.csv");
+  std::ofstream outFile("data/sensors/data_analysis.csv");
   if (!outFile.is_open()) 
   {
       RCLCPP_ERROR(this->get_logger(), "Error opening file for writing.");
@@ -434,16 +419,27 @@ void ROSWrapper::save_roughness_data()
   }
 
   // Write a header row (optional).
-  outFile << "Index,LiDAR,IMU,SPEED\n";
+  outFile << "Index,L_raw,L_raw_norm,L_corrected,IMU_raw,IMU_normalized,SPEED,X_local,Y_local,X_global,Y_global,Error\n";
 
   // Write data row by row.
-  for (size_t i = 0; i < this->roughness_vector_lidar.size(); i++) 
+  for (size_t i = 0; i < this->vector_roughness_lidar_raw.size(); i++) 
   {
-      outFile << i << "," << this->roughness_vector_lidar[i] << "," << this->roughness_vector_imu[i] << "," << this->velocity_vector_imu[i] << "\n";
+      outFile << i << "," << this->vector_roughness_lidar_raw[i] << "," << 
+      this->vector_roughness_lidar_raw_normalized[i] << "," << 
+      this->vector_roughness_lidar_raw_normalized_corrected[i] << "," << 
+      this->vector_roughness_imu[i] << "," << 
+      this->vector_roughness_imu_normalized[i] << "," << 
+      this->vector_velocity_imu[i] << "," << 
+      this->vector_coordinates_local_x[i] << "," <<
+      this->vector_coordinates_local_y[i] << "," <<
+      this->vector_coordinates_global_x[i] << "," <<
+      this->vector_coordinates_global_y[i] << "," <<
+      this->vector_error[i]
+      << "\n";
   }
 
   outFile.close();
-  RCLCPP_INFO(this->get_logger(), "Filtered data saved to filtered_data.csv");
+  RCLCPP_INFO(this->get_logger(), "Experiment data saved to data_analysis.csv");
 };
 
 
@@ -484,17 +480,17 @@ void ROSWrapper::create_global_map()
 // Update global map
 void ROSWrapper::update_global_map(coordinates_grid offset)
 {
-  previous_cell = offset; // Get the current cell (for IMu analysis)
+  previous_cell = offset; // Get the current cell (for IMU analysis)
 
   // Loop on each cell of the local grid
-  for(int ind_x=0; ind_x<roughness.TGridLocal.size(); ind_x++)
+  for(int local_ind_x=0; local_ind_x<roughness.TGridLocal.size(); local_ind_x++)
   {
-    for(int ind_y=0; ind_y<roughness.TGridLocal[0].size(); ind_y++)
+    for(int local_ind_y=0; local_ind_y<roughness.TGridLocal[0].size(); local_ind_y++)
     {
 
       // Compute the corresponding global grid cell.
-      int global_x = ind_x + offset[0];
-      int global_y = ind_y + offset[1];
+      int global_x = local_ind_x + offset[0];
+      int global_y = local_ind_y + offset[1];
 
       // Check if the computed global cell is within the bounds of the global grid.&
       if (global_x < 0 || global_x >= static_cast<int>(global_grid.size()) ||
@@ -505,10 +501,78 @@ void ROSWrapper::update_global_map(coordinates_grid offset)
         continue;
       }
 
-      // Fill the global grid
-      global_grid[global_x][global_y][0] = roughness.TGridLocal[ind_x][ind_y][0] * w_k;
+      if (roughness.TGridLocal[local_ind_x][local_ind_y][0]>0) // Only takes the computed values
+      {
+        double normalized_lidar_roughness = roughness.roughness_normalization(roughness.TGridLocal[local_ind_x][local_ind_y][0], roughness.roughness_lidar_threshold);
+        double error = last_imu_roughness - normalized_lidar_roughness;
+
+
+        // Fill the global grid
+        if (imu_correction)
+        {
+          global_grid[global_x][global_y][0] = normalized_lidar_roughness + error;
+          // RCLCPP_ERROR(this->get_logger(), "Error: here is the error %.3f, here is the roughness %.3f, here is the imu rough %.3f", error, normalized_lidar_roughness, last_imu_roughness);
+        }
+        else
+        {
+          global_grid[global_x][global_y][0] = normalized_lidar_roughness;  
+        }
+        
+        // Edge correction
+        if (global_grid[global_x][global_y][0] > LETHAL)
+        {
+          global_grid[global_x][global_y][0] = LETHAL;
+        }
+        else if (global_grid[global_x][global_y][0] < 0)
+        {
+          global_grid[global_x][global_y][0] = 0;
+        }
+
+
+        // Save data for analysis
+        if (global_x == robot_imu_coordinates[0] && global_y == robot_imu_coordinates[1])
+        {
+          // Lidar
+          vector_roughness_lidar_raw.push_back(roughness.TGridLocal[local_ind_x][local_ind_y][0]);
+          vector_roughness_lidar_raw_normalized.push_back(normalized_lidar_roughness);
+          vector_roughness_lidar_raw_normalized_corrected.push_back(global_grid[global_x][global_y][0]);
+
+
+          //IMU
+          vector_roughness_imu.push_back(roughness.TGridLocal[local_ind_x][local_ind_y][1]);
+          vector_roughness_imu_normalized.push_back(global_grid[global_x][global_y][1]);
+
+          //Other
+          vector_error.push_back(error);
+
+          vector_coordinates_local_x.push_back(local_ind_x);
+          vector_coordinates_local_y.push_back(local_ind_y);
+
+          vector_coordinates_global_x.push_back(global_x);
+          vector_coordinates_global_y.push_back(global_y);
+          vector_velocity_imu.push_back(velocity_norm);
+          
+          //Save current cell
+          // roughness.SaveCellASPC(local_ind_x, local_ind_y, vector_roughness_lidar_raw.size());
+        }
+      }
     }
   }
+};
+
+
+// Divide all the Norms by the speed to remove the speed variation
+vector<double> ROSWrapper::speed_normalization(vector<double>& norms)
+{
+  if (velocity_norm != 0.0)
+  {
+    if(velocity_norm < 1.0){velocity_norm*=10;};
+    for (int i=0; i<norms.size(); i++)
+    {
+      norms[i] /=  velocity_norm;
+    }
+  }
+  return norms;
 };
 
 

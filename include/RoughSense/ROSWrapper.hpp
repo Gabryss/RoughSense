@@ -79,10 +79,27 @@ class ROSWrapper : public rclcpp::Node
         // ===========================
         vector<double> filteredData;
         vector<double> rawData;
+
         
-        vector<double> roughness_vector_lidar;
-        vector<double> roughness_vector_imu;
-        vector<double> velocity_vector_imu;
+        vector<double> vector_roughness_lidar_raw;
+        vector<double> vector_roughness_lidar_raw_normalized;
+        vector<double> vector_roughness_lidar_raw_normalized_corrected;
+
+
+        vector<double> vector_roughness_imu;
+        vector<double> vector_roughness_imu_normalized;
+
+        vector<double> vector_velocity_imu;
+
+        vector<double> vector_error;
+        vector<double> vector_coordinates_local_x;
+        vector<double> vector_coordinates_local_y;
+        vector<double> vector_coordinates_global_x;
+        vector<double> vector_coordinates_global_y;
+        
+
+        float roughness_lidar_threshold=1;
+        float roughness_imu_threshold=1;
 
 
         // Weight
@@ -107,6 +124,7 @@ class ROSWrapper : public rclcpp::Node
         void simulate_sinusoid_signal();
         void save_filtered_data();
         void save_roughness_data();
+        
 
 
 
@@ -130,6 +148,7 @@ class ROSWrapper : public rclcpp::Node
 
         // Roughness
         Roughness roughness;
+        double last_imu_roughness;
 
         // Global map
         TerrainGrid global_grid;
@@ -139,6 +158,7 @@ class ROSWrapper : public rclcpp::Node
 
         // Local map
         coordinates coordinates_local;
+        vector<long unsigned int> robot_imu_coordinates;
 
         // Notch bandstop filter;
         std::shared_ptr<Dsp> DSP_;
@@ -152,11 +172,14 @@ class ROSWrapper : public rclcpp::Node
         // General parameters
         rapidjson::Document p;      // Config file reader
         bool debug_info;    
+        bool save_data;
         int window_size = 3;        // Amount of stored data in the window
         deque<double> window_imu;   // IMU window
         int debug_time_s;           // In seconds
         int temp_timer = 0;
-        double velocity_norm;       // Spo
+        double velocity_norm=0.3;       // Speed of the rover (default 0.3)
+        float LETHAL = 100.0;
+        bool imu_correction;
         
         // ===========================
         // Methods
@@ -166,8 +189,9 @@ class ROSWrapper : public rclcpp::Node
         void update_window_imu(double x);
         void create_global_map();
         void update_global_map(coordinates_grid offset);
-        double updateWeight(double lidar_k, double imu_k, int time); 
         coordinates_grid compute_offset();
         vector<double> convert_deque_vector(deque<double> input);
+        vector<double> speed_normalization(vector<double>& norms);
+
 
 };
