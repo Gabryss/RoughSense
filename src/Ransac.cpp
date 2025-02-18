@@ -22,7 +22,9 @@ void RansacAlgorithm::FitPlane(int t, vector<pcl::PointXYZI>& data, vector<doubl
     mt19937 rng(dev());
     uniform_int_distribution<mt19937::result_type> dist_data(0,data.size()-1); // distribution in range [0, data.size-1]
 
-    if(data.size()>0)
+    bestFit.clear();
+    distances.clear();
+    if(data.size()>3)
     {
         for(int i=0; i<k; i++)
         {
@@ -36,22 +38,21 @@ void RansacAlgorithm::FitPlane(int t, vector<pcl::PointXYZI>& data, vector<doubl
             while (indx_3 == indx_1 || indx_3 == indx_2) indx_3 = dist_data(rng);
 
             // Compute plane equation based on the sample taken
-            vector<double> plane = RansacAlgorithm::PlaneEquation(data[indx_1],data[indx_2],data[indx_3]);
+            vector<double> plane = PlaneEquation(data[indx_1],data[indx_2],data[indx_3]);
 
 
             // Evaluate inliners
-            int inliner_count = RansacAlgorithm::CountInliers(data, plane, t);
+            int inliner_count = CountInliers(data, plane, t);
 
             // Select the plane with the highest amount of inliers
             if(inliner_count > best_inliers)
             {
                 best_inliers = inliner_count;
-                RansacAlgorithm::distances = RansacAlgorithm::temp_distances; // Retreive the distance for std deviation in Traversability.cpp
+                distances = temp_distances; // Retreive the distance for std deviation in Traversability.cpp
                 bestFit = plane;
             }
         }
     }
-    
 };
 
 
@@ -101,13 +102,12 @@ double RansacAlgorithm::CalculateDistanceFromPlane(const pcl::PointXYZI& point, 
 int RansacAlgorithm::CountInliers(vector<pcl::PointXYZI>& data, vector<double>& plane_eq, int t)
 {
     int inliners_number = 0;
-    vector<double> temp_distances;                       // Temp distance vector
-    RansacAlgorithm::temp_distances = temp_distances;
+    temp_distances.clear();
 
     for(long unsigned int i=0; i<data.size(); i++)
     {
-        double distance = RansacAlgorithm::CalculateDistanceFromPlane(data[i], plane_eq);
-        RansacAlgorithm::temp_distances.push_back(distance);
+        double distance = CalculateDistanceFromPlane(data[i], plane_eq);
+        temp_distances.push_back(distance);
 
         if(distance < t)
         {

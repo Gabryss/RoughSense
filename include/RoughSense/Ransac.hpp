@@ -32,7 +32,7 @@ class RansacAlgorithm
         int t;                           // Threshold value to evaluate algorithm performance (inliners)
         int k=100;                       // Number of iterations allowed in the algorithm
 
-        vector<pcl::PointXYZI> data;     // Input data
+        // vector<pcl::PointXYZI> data;     // Input data
         vector<double> distances;         // Distances from point to plane
         vector<double> temp_distances;    // Temp distance vector
         
