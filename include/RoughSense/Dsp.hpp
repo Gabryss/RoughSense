@@ -17,9 +17,16 @@
 #include <deque>
 #include <numeric>
 #include <complex>
+#include <Eigen/Dense> // Eigen for matrix operations
+
 
 // Liquid-DSP
 #include <liquid/liquid.h>
+
+// Used for IDW
+struct Cell {
+    double local_x, local_y, global_x , global_y, pred_raw, pred_norm, observed_raw, observed_norm, theta_a, theta_b, roughness_corrected, delta_idw, roughness_final ;
+};
 
 
 using namespace std;
@@ -39,8 +46,17 @@ class Dsp {
         // ===========================
         // The sinusoid attribute is used for simulating IMU data (debug)
         vector<double> sinusoid;
+        
+        // RLS
+        double lambda;          // Forgetting factor        
+        Eigen::VectorXd theta;  // Model parameters [theta_0, theta_1]
+        Eigen::MatrixXd P;      // Covariance matrix
 
-        // Liquid-DSP filter object (pointer type defined by Liquid-DSP)
+        //IDW
+        double idw_power = 2.0;
+
+
+        // Liquid-DSP filter object (Celler type defined by Liquid-DSP)
         iirfilt_crcf _filter {nullptr};
 
         // ===========================
@@ -49,6 +65,17 @@ class Dsp {
         void create_filter(float f_center_p, float bandwidth_p, float fs_p);
         void process_sample(complex<float> input, complex<float> *output);
         void generate_simulated_signal();
+
+
+        // RLS
+        void initialize_rls();
+        void rls_update(double predicted_roughness, double roughness_observed);
+        double rls_correction(double predicted_roughness);
+
+        // IDW
+        double idw_interpolation(const vector<Cell>& observed_cells, double x, double y, double predicted_roughness); 
+        double distance(const Cell& a, const Cell& b);
+
 
 
     protected:
@@ -60,4 +87,7 @@ class Dsp {
         unsigned int order = 4;   // Filter order
         float Ap = 1.0f;          // Passband ripple in dB
         float As = 40.0f;         // Stopband attenuation in dB
+
+
+        
 };

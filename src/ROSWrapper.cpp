@@ -21,13 +21,15 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     get_parameters(path_parameters);
     save_data = p["save_data"].GetBool();
     debug_info = p["debug_info"].GetBool();
+    use_idw = p["activate_idw"].GetBool();
     imu_correction = p["activate_imu_correction"].GetBool();
     debug_time_s = p["debug_time_s"].GetInt();
-    global_map_size = p["global_map_size"].GetFloat();
     resolution = p["map_resolution"].GetFloat();
     roughness_lidar_threshold=p["roughness_lidar_threshold"].GetFloat();
     roughness_imu_threshold=p["roughness_imu_threshold"].GetFloat();
     window_size = p["imu_window_size"].GetInt();
+    local_map_size = p["local_map_size"].GetFloat();
+    global_map_size = p["global_map_size"].GetFloat();
 
 
     w_k = p["w_k"].GetFloat();
@@ -37,7 +39,27 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     error_moving_avg = p["error_moving_avg"].GetFloat();
 
 
+    // Local and global intialization
+    nb_cells_local = static_cast<unsigned int>(local_map_size/resolution);
+    if ((nb_cells_local % 2) == 0)
+    {
+        nb_cells_local +=1;
+    }
+    nb_cells_global = static_cast<unsigned int>(global_map_size/resolution);
+    if ((nb_cells_global % 2) == 0)
+    {
+        nb_cells_global +=1;
+    }
 
+
+
+
+    // =====================================================
+    // Compute static offset (between global and local)
+    // =====================================================
+    int global_origin_index = nb_cells_global / 2;
+    int local_origin_index = nb_cells_local / 2;
+    offset_static = (global_origin_index - local_origin_index);
 
     // =====================================================
     // Initialize global map
@@ -51,9 +73,14 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-    timer_ = this->create_wall_timer(
-      std::chrono::milliseconds(200),  // Call every 200 ms
+    timer_tf_ = this->create_wall_timer(
+      std::chrono::milliseconds(100),  // Call every 100 ms
       std::bind(&ROSWrapper::lookupTransform, this)
+    );
+
+    timer_roughness_ = this->create_wall_timer(
+      std::chrono::milliseconds(200),  // Call every 200 ms
+      std::bind(&ROSWrapper::compute_roughness, this)
     );
 
     // =====================================================
@@ -68,7 +95,7 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     // =====================================================
     // POINT CLOUD
     // =====================================================
-    cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
+    cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
 
     // Subscribe to the point cloud topic    
     sub_pc_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -83,8 +110,12 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
 
     // Set roughness parameters
     roughness.resolution = resolution;
-    roughness.globalGrid.resolution = p["map_resolution"].GetFloat();
     roughness.local_size = p["local_map_size"].GetFloat();
+    roughness.global_size = p["global_map_size"].GetFloat();
+
+    
+
+
     roughness.stylized=p["map_unknown_transparency"].GetBool();
     roughness.ransac_iterations=p["ransac_iterations"].GetInt();
     roughness.roughness_shift=p["roughness_shift"].GetFloat();
@@ -92,7 +123,8 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     roughness.roughness_imu_threshold=p["roughness_imu_threshold"].GetFloat();
     roughness.height=p["height"].GetFloat();
     roughness.low_grid_resolution=p["map_low_resolution_division_factor"].GetInt();
-
+    roughness.nb_cells = nb_cells_local;
+    roughness.nb_cells_global = nb_cells_global;
 
     // =====================================================
     // IMU
@@ -100,13 +132,20 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     imu_sampling_frequency = p["imu_sampling_frequency"].GetFloat();
     imu_filter_frequency = p["imu_filter_frequency"].GetFloat();
     imu_filter_bandwidth = p["imu_filter_bandwidth"].GetFloat();
-    roughness.TestGrid();
     DSP_ = std::make_shared<Dsp>();
     DSP_->create_filter(imu_filter_frequency, imu_filter_bandwidth, imu_sampling_frequency);
 
     // this->simulate_sinusoid_signal();    // Debug only
     sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
      p["imu_topic"].GetString(), 10, std::bind(&ROSWrapper::imu_callback, this, _1));
+
+
+    // RLS and IDW initialization
+    DSP_->lambda=p["rls_forgeting_factor"].GetFloat();
+    DSP_->idw_power=p["idw_power"].GetFloat();
+    DSP_->initialize_rls();
+
+
 };
 
 
@@ -116,6 +155,7 @@ ROSWrapper::~ROSWrapper()
   {
     save_filtered_data();
     save_roughness_data();
+    save_timers_data();
   }
 };
 
@@ -130,7 +170,6 @@ void ROSWrapper::pc_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
     cloud->points.clear();
     pcl::fromROSMsg(*msg, *cloud);
-    RCLCPP_INFO(this->get_logger(), "New map received");
 };
 
 
@@ -158,7 +197,8 @@ void ROSWrapper::imu_callback(const sensor_msgs::msg::Imu &msg)
 
     this->filteredData.push_back(filtered_data.real());
 
-    // Update window
+    // Add observed data to the vector
+    observed_data_filtered.push_back(filtered_data.real());
     this->update_window_imu(filtered_data.real());
 
     // Publish data (debug only)
@@ -182,49 +222,16 @@ void ROSWrapper::lookupTransform()
       roughness.pose = {transform_stamped.transform.translation.x, transform_stamped.transform.translation.y, transform_stamped.transform.translation.z};
       coordinates_local = {roughness.pose[0], roughness.pose[1]};
 
-      coordinates_grid current_cell = compute_offset();
+      new_cell = coord_local_to_global({nb_cells_local/2, nb_cells_local/2});
+      // new_cell = compute_offset();
 
-      // Calculate the point cloud roughness
-      if(cloud->size()>3 && (current_cell != previous_cell))
+      if (new_cell != current_cell)
       {
-          roughness.CalculatePCRoughness(cloud);
-          roughness.saveEntireGridToPCD(roughness.PCGrid);
-
-          // Calculate the IMU roughness
-          vector<double> window_imu_vector = convert_deque_vector(window_imu);
-          vector<double> window_imu_vector_speed_normalized = speed_normalization(window_imu_vector);
-          double roughness_imu = roughness.CalculateStd(window_imu_vector);
-          double roughness_imu_normalized = roughness.roughness_normalization(roughness_imu, roughness.roughness_imu_threshold);
-
-          long unsigned int local_grid_center = roughness.TGridLocal.size()/2;
-
-          robot_imu_coordinates = {previous_cell[0] + local_grid_center, previous_cell[1] + local_grid_center};
-          
-          // Check if the computed global cell is within the bounds of the global grid.&
-          if (robot_imu_coordinates[0] < 0 || robot_imu_coordinates[0] >= static_cast<int>(global_grid.size()) ||
-              robot_imu_coordinates[1] < 0 || robot_imu_coordinates[1] >= static_cast<int>(global_grid.size()))
-          {
-            // Skip cells that fall outside the global grid.
-            RCLCPP_ERROR(this->get_logger(), "Error: Local grid outside the global grid.");
-          }
-          else
-          {
-            RCLCPP_WARN(this->get_logger(), "IMU is going to be attributed %.3li, %.3li", local_grid_center, local_grid_center);
-            roughness.TGridLocal[local_grid_center][local_grid_center][1] = roughness_imu;
-            global_grid[robot_imu_coordinates[0]][robot_imu_coordinates[1]][1] = roughness_imu_normalized;
-            last_imu_roughness = roughness_imu_normalized;
-          }
-        
-          update_global_map(current_cell);
-          
-          // Publish maps
-          publish_roughness_map(roughness.TGridLocal, true);  // Local map
-          publish_roughness_map(global_grid, false);          // Global map
+        previous_cell = current_cell;
+        current_cell = new_cell;
+        changed_cell = true;
       }
-      else
-      {
-        RCLCPP_WARN(this->get_logger(), "Point cloud is empty!");
-      }
+      
     } 
     catch (const tf2::TransformException & ex) {
       if ((temp_timer>=debug_time_s*5) && debug_info)
@@ -242,6 +249,172 @@ void ROSWrapper::lookupTransform()
 
 
 
+
+void ROSWrapper::compute_roughness()
+{
+  if (previous_cell[0] == 0 || previous_cell[1] == 0)
+    {
+      return;
+    }
+  if(!cloud->empty() && changed_cell)
+  {
+      timer_struct timer_chrono;
+
+      auto start = std::chrono::high_resolution_clock::now();
+      roughness.CalculatePCRoughness(cloud);
+      auto end = std::chrono::high_resolution_clock::now();
+      long long duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      timer_chrono.pc_roughness_timer = duration;
+      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      duration = 0;
+
+      start = std::chrono::high_resolution_clock::now();
+      roughness.saveEntireGridToPCD(roughness.PCGrid);
+      end = std::chrono::high_resolution_clock::now();
+      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      timer_chrono.save_entire_pc_timer = duration;
+      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      duration = 0;
+
+
+
+      start = std::chrono::high_resolution_clock::now();
+      coordinates_grid local_coordinates = coord_global_to_local(previous_cell);
+      end = std::chrono::high_resolution_clock::now();
+      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      timer_chrono.calculating_coordonates_timer = duration;
+      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      duration = 0;
+
+      // Calculate the IMU roughness
+      start = std::chrono::high_resolution_clock::now();
+      vector<double> observed_values_speed_normalized = speed_normalization(observed_data_filtered);
+      end = std::chrono::high_resolution_clock::now();
+      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      timer_chrono.speed_normalization_timer = duration;
+      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      duration = 0;
+
+
+      start = std::chrono::high_resolution_clock::now();
+      roughness.CalculateObservedRoughness(observed_values_speed_normalized, local_coordinates);
+      observed_data_filtered.clear();
+      end = std::chrono::high_resolution_clock::now();
+      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      timer_chrono.calculate_observed_roughness_timer = duration;
+      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      duration = 0;
+      
+      
+      start = std::chrono::high_resolution_clock::now();
+      DSP_->rls_update(roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][1], roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][3]);
+      roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][4] =  DSP_->theta[0];
+      roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][5] =  DSP_->theta[1];
+      end = std::chrono::high_resolution_clock::now();
+      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      timer_chrono.rls_update_timer = duration;
+      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      duration = 0;
+
+      start = std::chrono::high_resolution_clock::now();
+      // RLS
+      for (int i = 0; i < roughness.TGridLocal.size(); i++)
+      {
+        for (int j = 0; j < roughness.TGridLocal.size(); j++)
+        {
+          double roughness_corrected = DSP_->rls_correction(roughness.TGridLocal[i][j][1]);
+          roughness.TGridLocal[i][j][6] = roughness.roughness_normalization(roughness_corrected, 1);
+        }
+      }
+      end = std::chrono::high_resolution_clock::now();
+      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      timer_chrono.rls_update_timer = duration;
+      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      duration = 0;
+
+      Cell current_cell_struct;
+      current_cell_struct.local_x = local_coordinates[0];
+      current_cell_struct.local_y = local_coordinates[1];
+      current_cell_struct.global_x = previous_cell[0];
+      current_cell_struct.global_y = previous_cell[1];
+
+      current_cell_struct.pred_raw = roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][0];
+      current_cell_struct.pred_norm = roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][1];
+      current_cell_struct.observed_raw = roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][2];
+      current_cell_struct.observed_norm = roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][3];
+      current_cell_struct.theta_a = roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][4];
+      current_cell_struct.theta_b = roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][5];
+      current_cell_struct.roughness_corrected = roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][6];
+
+
+      start = std::chrono::high_resolution_clock::now();
+      // IDW
+      if (use_idw)
+      {
+        for (int i = 0; i < roughness.TGridLocal.size(); i++)
+        {
+          for (int j = 0; j < roughness.TGridLocal.size(); j++)
+          {
+            roughness.TGridLocal[i][j][8] = DSP_->idw_interpolation(vector_observed_cells, i, j, roughness.TGridLocal[i][j][1]);
+          }
+        }
+      }
+      else
+      {
+        for (int i = 0; i < roughness.TGridLocal.size(); i++)
+        {
+          for (int j = 0; j < roughness.TGridLocal.size(); j++)
+          {
+            roughness.TGridLocal[i][j][8] = roughness.TGridLocal[i][j][6];
+          }
+        }
+      }
+      end = std::chrono::high_resolution_clock::now();
+      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      timer_chrono.idw_interpolation_timer = duration;
+      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      duration = 0;
+
+      current_cell_struct.delta_idw = roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][7];
+      current_cell_struct.roughness_final = roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][8];
+
+
+
+      start = std::chrono::high_resolution_clock::now();
+      update_global_map(current_cell);
+      end = std::chrono::high_resolution_clock::now();
+      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      timer_chrono.update_global_map_timer = duration;
+      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      duration = 0;
+
+
+      // Publish maps
+      start = std::chrono::high_resolution_clock::now();
+      publish_roughness_map(roughness.TGridLocal, true);  // Local map
+      publish_roughness_map(global_grid, false);          // Global map
+      end = std::chrono::high_resolution_clock::now();
+      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      timer_chrono.publish_maps_timer = duration;
+
+      changed_cell = false;
+      vector_observed_cells.push_back(current_cell_struct);
+      vector_times.push_back(timer_chrono);
+  }
+};
+
+
+
+
 // =====================================================
 // PUBLISHER
 // =====================================================
@@ -255,33 +428,34 @@ void ROSWrapper::publish_roughness_map(const TerrainGrid &grid, bool is_local)
     map_meta_data.width =  grid.size();
     map_meta_data.height = grid[0].size();
 
-    int center_coordinates_x = -(grid.size()*resolution)/2;
-    int center_coordinates_y = -(grid[0].size()*resolution)/2;
+    float center_coordinates_x = (-(grid.size()*resolution)/2);
+    float center_coordinates_y = (-(grid[0].size()*resolution)/2);
 
 
     if (is_local)
     {
-      map_meta_data.origin.position.x = center_coordinates_x + coordinates_local[0];
-      map_meta_data.origin.position.y = center_coordinates_y + coordinates_local[1];
+      map_meta_data.origin.position.x = center_coordinates_x + coordinates_local[0] + resolution/2;
+      map_meta_data.origin.position.y = center_coordinates_y + coordinates_local[1] + resolution/2;
     }
     else
     {
-      map_meta_data.origin.position.x = center_coordinates_x;
-      map_meta_data.origin.position.y = center_coordinates_y;
+      map_meta_data.origin.position.x = center_coordinates_x + resolution/2;
+      map_meta_data.origin.position.y = center_coordinates_y + resolution/2;
     }
     map_meta_data.origin.position.z = transform_stamped.transform.translation.z;
 
-    map_meta_data.origin.orientation.x= 0.7071068;
-    map_meta_data.origin.orientation.y= 0.7071068;
+    map_meta_data.origin.orientation.x= 0.0;
+    map_meta_data.origin.orientation.y= 0.0;
+
 
     map_meta_data.origin.orientation.z= 0.0;
-    map_meta_data.origin.orientation.w= 0.0;
+    map_meta_data.origin.orientation.w= 1.0;
 
     
     occupancy_grid.header.stamp = this->now();
     occupancy_grid.header.frame_id = p["roughness_frame_id"].GetString();
     occupancy_grid.info = map_meta_data;
-    occupancy_grid.data.resize(map_meta_data.width * map_meta_data.height);
+    occupancy_grid.data.resize(map_meta_data.width * map_meta_data.height, -1);
 
     // Fill the occupancy_grid with data
     // Fill the OccupancyGrid message.
@@ -290,7 +464,7 @@ void ROSWrapper::publish_roughness_map(const TerrainGrid &grid, bool is_local)
       for (unsigned int x = 0; x < map_meta_data.width; ++x) 
       {
         unsigned int index = y * map_meta_data.width + x;
-        occupancy_grid.data[index] = grid[y][x][0]*100;                    // Fill data
+        occupancy_grid.data[index] = grid[x][y][8]*100;                    // Fill data
       }
     }
 
@@ -419,27 +593,66 @@ void ROSWrapper::save_roughness_data()
   }
 
   // Write a header row (optional).
-  outFile << "Index,L_raw,L_raw_norm,L_corrected,IMU_raw,IMU_normalized,SPEED,X_local,Y_local,X_global,Y_global,Error\n";
+  outFile << "Index,local_x,local_y,global_x,global_y,pred_raw,pred_norm,observed_raw,observed_norm,theta_a,theta_b,roughness_corrected,delta_idw,roughness_final\n";
 
   // Write data row by row.
-  for (size_t i = 0; i < this->vector_roughness_lidar_raw.size(); i++) 
+  for (size_t i = 0; i < this->vector_observed_cells.size(); i++) 
   {
-      outFile << i << "," << this->vector_roughness_lidar_raw[i] << "," << 
-      this->vector_roughness_lidar_raw_normalized[i] << "," << 
-      this->vector_roughness_lidar_raw_normalized_corrected[i] << "," << 
-      this->vector_roughness_imu[i] << "," << 
-      this->vector_roughness_imu_normalized[i] << "," << 
-      this->vector_velocity_imu[i] << "," << 
-      this->vector_coordinates_local_x[i] << "," <<
-      this->vector_coordinates_local_y[i] << "," <<
-      this->vector_coordinates_global_x[i] << "," <<
-      this->vector_coordinates_global_y[i] << "," <<
-      this->vector_error[i]
+      outFile << i << "," << 
+      this->vector_observed_cells[i].local_x << "," << 
+      this->vector_observed_cells[i].local_y << "," << 
+      this->vector_observed_cells[i].global_x << "," << 
+      this->vector_observed_cells[i].global_y << "," << 
+      this->vector_observed_cells[i].pred_raw << "," << 
+      this->vector_observed_cells[i].pred_norm << "," <<
+      this->vector_observed_cells[i].observed_raw << "," <<
+      this->vector_observed_cells[i].observed_norm << "," <<
+      this->vector_observed_cells[i].theta_a << "," <<
+      this->vector_observed_cells[i].theta_b << "," <<
+      this->vector_observed_cells[i].roughness_corrected << "," <<
+      this->vector_observed_cells[i].delta_idw << "," <<
+      this->vector_observed_cells[i].roughness_final
       << "\n";
   }
 
   outFile.close();
   RCLCPP_INFO(this->get_logger(), "Experiment data saved to data_analysis.csv");
+};
+
+
+
+void ROSWrapper::save_timers_data()
+{
+  // Open an output file stream (CSV file).
+  std::ofstream outFile("data/sensors/timer_analysis.csv");
+  if (!outFile.is_open()) 
+  {
+      RCLCPP_ERROR(this->get_logger(), "Error opening file for writing.");
+      return;
+  }
+
+  // Write a header row (optional).
+  outFile << "Index,pc_roughness_timer,save_entire_pc_timer,calculating_coordonates_timer,speed_normalization_timer,calculate_observed_roughness_timer,rls_update_timer,rls_correction_timer,idw_interpolation_timer,update_global_map_timer,publish_maps_timer\n";
+
+  // Write data row by row.
+  for (size_t i = 0; i < this->vector_times.size(); i++) 
+  {
+      outFile << i << "," << 
+      this->vector_times[i].pc_roughness_timer << "," <<
+      this->vector_times[i].save_entire_pc_timer << "," <<
+      this->vector_times[i].calculating_coordonates_timer << "," <<
+      this->vector_times[i].speed_normalization_timer << "," <<
+      this->vector_times[i].calculate_observed_roughness_timer << "," <<
+      this->vector_times[i].rls_update_timer << "," <<
+      this->vector_times[i].rls_correction_timer << "," <<
+      this->vector_times[i].idw_interpolation_timer << "," <<
+      this->vector_times[i].update_global_map_timer << "," <<
+      this->vector_times[i].publish_maps_timer
+      << "\n";
+  }
+
+  outFile.close();
+  RCLCPP_INFO(this->get_logger(), "Experiment data saved to timer_analysis.csv");
 };
 
 
@@ -460,18 +673,23 @@ vector<double> ROSWrapper::convert_deque_vector(deque<double> input)
 // Create global map
 void ROSWrapper::create_global_map()
 {
-  unsigned int nb_cells = static_cast<unsigned int>(global_map_size/resolution);
-
   global_grid.clear();
-  global_grid.resize(nb_cells);
-  for(int ind_x=0; ind_x<nb_cells; ind_x++)
+  global_grid.resize(nb_cells_global);
+  for(int ind_x=0; ind_x<nb_cells_global; ind_x++)
   {
-      global_grid[ind_x].resize(nb_cells);
-      for(int ind_y=0; ind_y<nb_cells; ind_y++)
+      global_grid[ind_x].resize(nb_cells_global);
+      for(int ind_y=0; ind_y<nb_cells_global; ind_y++)
       {
-          global_grid[ind_x][ind_y].resize(2);
+          global_grid[ind_x][ind_y].resize(9);
           global_grid[ind_x][ind_y][0] = 0.0;
           global_grid[ind_x][ind_y][1] = 0.0;
+          global_grid[ind_x][ind_y][2] = 0.0;
+          global_grid[ind_x][ind_y][3] = 0.0;
+          global_grid[ind_x][ind_y][4] = 0.0;
+          global_grid[ind_x][ind_y][5] = 0.0;
+          global_grid[ind_x][ind_y][6] = 0.0;
+          global_grid[ind_x][ind_y][7] = 0.0;
+          global_grid[ind_x][ind_y][8] = 0.0;
       }
   }
 };
@@ -480,21 +698,18 @@ void ROSWrapper::create_global_map()
 // Update global map
 void ROSWrapper::update_global_map(coordinates_grid offset)
 {
-  previous_cell = offset; // Get the current cell (for IMU analysis)
-
   // Loop on each cell of the local grid
   for(int local_ind_x=0; local_ind_x<roughness.TGridLocal.size(); local_ind_x++)
   {
     for(int local_ind_y=0; local_ind_y<roughness.TGridLocal[0].size(); local_ind_y++)
     {
 
-      // Compute the corresponding global grid cell.
-      int global_x = local_ind_x + offset[0];
-      int global_y = local_ind_y + offset[1];
+
+      coordinates_grid global_coord = coord_local_to_global({local_ind_x, local_ind_y});
 
       // Check if the computed global cell is within the bounds of the global grid.&
-      if (global_x < 0 || global_x >= static_cast<int>(global_grid.size()) ||
-          global_y < 0 || global_y >= static_cast<int>(global_grid.size()))
+      if (global_coord[0] < 0 || global_coord[0] >= static_cast<int>(global_grid.size()) ||
+          global_coord[1] < 0 || global_coord[1] >= static_cast<int>(global_grid.size()))
       {
         // Skip cells that fall outside the global grid.
         RCLCPP_ERROR(this->get_logger(), "Error: Local grid outside the global grid.");
@@ -503,58 +718,10 @@ void ROSWrapper::update_global_map(coordinates_grid offset)
 
       if (roughness.TGridLocal[local_ind_x][local_ind_y][0]>0) // Only takes the computed values
       {
-        double normalized_lidar_roughness = roughness.roughness_normalization(roughness.TGridLocal[local_ind_x][local_ind_y][0], roughness.roughness_lidar_threshold);
-        double error = last_imu_roughness - normalized_lidar_roughness;
-
-
-        // Fill the global grid
-        if (imu_correction)
-        {
-          global_grid[global_x][global_y][0] = normalized_lidar_roughness + error;
-          // RCLCPP_ERROR(this->get_logger(), "Error: here is the error %.3f, here is the roughness %.3f, here is the imu rough %.3f", error, normalized_lidar_roughness, last_imu_roughness);
-        }
-        else
-        {
-          global_grid[global_x][global_y][0] = normalized_lidar_roughness;  
-        }
-        
-        // Edge correction
-        if (global_grid[global_x][global_y][0] > LETHAL)
-        {
-          global_grid[global_x][global_y][0] = LETHAL;
-        }
-        else if (global_grid[global_x][global_y][0] < 0)
-        {
-          global_grid[global_x][global_y][0] = 0;
-        }
-
-
-        // Save data for analysis
-        if (global_x == robot_imu_coordinates[0] && global_y == robot_imu_coordinates[1])
-        {
-          // Lidar
-          vector_roughness_lidar_raw.push_back(roughness.TGridLocal[local_ind_x][local_ind_y][0]);
-          vector_roughness_lidar_raw_normalized.push_back(normalized_lidar_roughness);
-          vector_roughness_lidar_raw_normalized_corrected.push_back(global_grid[global_x][global_y][0]);
-
-
-          //IMU
-          vector_roughness_imu.push_back(roughness.TGridLocal[local_ind_x][local_ind_y][1]);
-          vector_roughness_imu_normalized.push_back(global_grid[global_x][global_y][1]);
-
-          //Other
-          vector_error.push_back(error);
-
-          vector_coordinates_local_x.push_back(local_ind_x);
-          vector_coordinates_local_y.push_back(local_ind_y);
-
-          vector_coordinates_global_x.push_back(global_x);
-          vector_coordinates_global_y.push_back(global_y);
-          vector_velocity_imu.push_back(velocity_norm);
-          
+        global_grid[global_coord[0]][global_coord[1]] = roughness.TGridLocal[local_ind_x][local_ind_y];
           //Save current cell
           // roughness.SaveCellASPC(local_ind_x, local_ind_y, vector_roughness_lidar_raw.size());
-        }
+        // }
       }
     }
   }
@@ -576,19 +743,52 @@ vector<double> ROSWrapper::speed_normalization(vector<double>& norms)
 };
 
 
-// Compute offset
-coordinates_grid ROSWrapper::compute_offset()
+coordinates_grid ROSWrapper::coord_local_to_global(coordinates_grid coord)
 {
-    // Compute offset
-    double local_origin_x =  (roughness.pose[0]) - (roughness.local_size / 2); // In meter
-    double local_origin_y =  (roughness.pose[1]) - (roughness.local_size / 2); // In meter
+  int dynamic_offset_x = 0;
+  int dynamic_offset_y = 0;
 
-    double global_origin = -(global_map_size) / 2; // In meter
+  if (roughness.pose[0] != 0)
+  {
+    dynamic_offset_x = roughness.pose[0] / resolution;
+  }
+  if (roughness.pose[1] != 0)
+  {
+    dynamic_offset_y = roughness.pose[1] / resolution;
+  }
+  
+  int global_cell_x =  coord[0] + offset_static + dynamic_offset_x; // local coordinate + offset + dynamic offset
+  int global_cell_y =  coord[1] + offset_static + dynamic_offset_y; // local coordinate + offset + dynamic offset
 
-    // Compute offset
-    int cell_indx = static_cast<int>((local_origin_x - global_origin)/resolution);
-    int cell_indy = static_cast<int>((local_origin_y - global_origin)/resolution);
-    return {cell_indx, cell_indy};
+  // Ensure local coordinates remain within valid bounds
+  global_cell_x = max(0, min(global_cell_x, nb_cells_global - 1));
+  global_cell_y = max(0, min(global_cell_y, nb_cells_global - 1));
+
+  return {global_cell_x, global_cell_y};
+};
+
+coordinates_grid ROSWrapper::coord_global_to_local(coordinates_grid coord)
+{
+  int dynamic_offset_x = 0;
+  int dynamic_offset_y = 0;
+
+  if (roughness.pose[0] != 0)
+  {
+    dynamic_offset_x = roughness.pose[0] / resolution;
+  }
+  if (roughness.pose[1] != 0)
+  {
+    dynamic_offset_y = roughness.pose[1] / resolution;
+  }
+  int local_cell_x  =  coord[0] - offset_static - dynamic_offset_x; // global coordinate - offset - dynamic offset
+  int local_cell_y  =  coord[1] - offset_static - dynamic_offset_y; // global coordinate - offset - dynamic offset
+
+  // Ensure local coordinates remain within valid bounds
+  local_cell_x = max(0, min(local_cell_x, nb_cells_local - 1));
+  local_cell_y = max(0, min(local_cell_y, nb_cells_local - 1));
+
+
+  return {local_cell_x, local_cell_y};
 };
 
 

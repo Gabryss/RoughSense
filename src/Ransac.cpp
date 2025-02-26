@@ -15,7 +15,7 @@
 // =====================================================
 // Process Ransac on a pointcloud cell
 // =====================================================
-void RansacAlgorithm::FitPlane(int t, vector<pcl::PointXYZI>& data, vector<double>& bestFit)
+void RansacAlgorithm::FitPlane(int t, vector<pcl::PointXYZ>& data, vector<double>& bestFit)
 {
     int best_inliers = 0;
     random_device dev;
@@ -56,7 +56,7 @@ void RansacAlgorithm::FitPlane(int t, vector<pcl::PointXYZI>& data, vector<doubl
 };
 
 
-vector<double> RansacAlgorithm::PlaneEquation(const pcl::PointXYZI& p1, const pcl::PointXYZI& p2, const pcl::PointXYZI& p3)
+vector<double> RansacAlgorithm::PlaneEquation(const pcl::PointXYZ& p1, const pcl::PointXYZ& p2, const pcl::PointXYZ& p3)
 {
     // Calculate two vectors that lies on the plane we wish to calculate
     vector<double> v1({p2.x-p1.x, p2.y-p1.y, p2.z-p1.z});
@@ -91,7 +91,7 @@ vector<double> RansacAlgorithm::PlaneEquation(const pcl::PointXYZI& p1, const pc
 // TOOLS
 // =====================================================
 
-double RansacAlgorithm::CalculateDistanceFromPlane(const pcl::PointXYZI& point, const vector<double>& plane_eq)
+double RansacAlgorithm::CalculateDistanceFromPlane(const pcl::PointXYZ& point, const vector<double>& plane_eq)
 {
     double up = abs(plane_eq[0] * point.x + plane_eq[1] * point.y + plane_eq[2] * point.z + plane_eq[3]);
     double down = sqrt(plane_eq[0]*plane_eq[0] + plane_eq[1]*plane_eq[1] + plane_eq[2]*plane_eq[2]);
@@ -99,7 +99,7 @@ double RansacAlgorithm::CalculateDistanceFromPlane(const pcl::PointXYZI& point, 
 };
 
 
-int RansacAlgorithm::CountInliers(vector<pcl::PointXYZI>& data, vector<double>& plane_eq, int t)
+int RansacAlgorithm::CountInliers(vector<pcl::PointXYZ>& data, vector<double>& plane_eq, int t)
 {
     int inliners_number = 0;
     temp_distances.clear();

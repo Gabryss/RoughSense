@@ -67,6 +67,11 @@ using coordinates = vector<double>;
 
 using coordinates_grid = vector<int>;
 
+// Used for IDW
+struct timer_struct {
+    long unsigned int pc_roughness_timer, save_entire_pc_timer, calculating_coordonates_timer, speed_normalization_timer, calculate_observed_roughness_timer, rls_update_timer, rls_correction_timer, idw_interpolation_timer, update_global_map_timer, publish_maps_timer;
+};
+
 
 class ROSWrapper : public rclcpp::Node
 {
@@ -79,6 +84,7 @@ class ROSWrapper : public rclcpp::Node
         // ===========================
         vector<double> filteredData;
         vector<double> rawData;
+        vector<double> observed_data_filtered;
 
         
         vector<double> vector_roughness_lidar_raw;
@@ -96,10 +102,22 @@ class ROSWrapper : public rclcpp::Node
         vector<double> vector_coordinates_local_y;
         vector<double> vector_coordinates_global_x;
         vector<double> vector_coordinates_global_y;
+
+
+        vector<Cell> vector_observed_cells;
+        vector<timer_struct> vector_times;
+
         
 
         float roughness_lidar_threshold=1;
         float roughness_imu_threshold=1;
+
+        // Local and global initialization
+        float local_map_size;
+        float global_map_size;
+        int nb_cells_local;
+        int nb_cells_global;
+        int offset_static = 0;
 
 
         // Weight
@@ -124,6 +142,11 @@ class ROSWrapper : public rclcpp::Node
         void simulate_sinusoid_signal();
         void save_filtered_data();
         void save_roughness_data();
+        void save_timers_data();
+
+
+        void compute_roughness();
+
         
 
 
@@ -140,7 +163,9 @@ class ROSWrapper : public rclcpp::Node
         rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu_;
         rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr pub_roughness_local_;
         rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr pub_roughness_global_;
-        rclcpp::TimerBase::SharedPtr timer_;
+        rclcpp::TimerBase::SharedPtr timer_tf_;
+        rclcpp::TimerBase::SharedPtr timer_roughness_;
+
 
         std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
         std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
@@ -148,16 +173,21 @@ class ROSWrapper : public rclcpp::Node
 
         // Roughness
         Roughness roughness;
+        vector<double> observed_roughness_vector;
         double last_imu_roughness;
 
         // Global map
         TerrainGrid global_grid;
-        int global_map_size;        // Size of the global map
         float resolution;           // Resolution of both local and global map
+        coordinates_grid new_cell = {0,0};
+        coordinates_grid current_cell = {0,0};
         coordinates_grid previous_cell = {0,0};
+        coordinates_grid local_grid_origin = {0,0};
+        bool changed_cell = false;
+
 
         // Local map
-        coordinates coordinates_local;
+        coordinates coordinates_local = {0,0};
         vector<long unsigned int> robot_imu_coordinates;
 
         // Notch bandstop filter;
@@ -167,7 +197,7 @@ class ROSWrapper : public rclcpp::Node
         float imu_sampling_frequency;
 
         // Initialize PCL pointcloud
-        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud;        
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;        
 
         // General parameters
         rapidjson::Document p;      // Config file reader
@@ -180,6 +210,7 @@ class ROSWrapper : public rclcpp::Node
         double velocity_norm=0.3;       // Speed of the rover (default 0.3)
         float LETHAL = 100.0;
         bool imu_correction;
+        bool use_idw;
         
         // ===========================
         // Methods
@@ -189,9 +220,10 @@ class ROSWrapper : public rclcpp::Node
         void update_window_imu(double x);
         void create_global_map();
         void update_global_map(coordinates_grid offset);
-        coordinates_grid compute_offset();
         vector<double> convert_deque_vector(deque<double> input);
         vector<double> speed_normalization(vector<double>& norms);
+        coordinates_grid coord_local_to_global(coordinates_grid coord);
+        coordinates_grid coord_global_to_local(coordinates_grid coord);
 
 
 };

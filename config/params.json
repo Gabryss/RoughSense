@@ -8,9 +8,9 @@
     "tf_topic":"/tf",
     "height":1,
 
-    "map_resolution":1,
+    "map_resolution":0.25,
     "local_map_size":5,
-    "global_map_size":10,
+    "global_map_size":100,
     "map_unknown_transparency":false,
     "map_low_resolution_division_factor":1,
 
@@ -30,6 +30,10 @@
     "roughness_imu_threshold": 0.2,
     "imu_window_size":100,
     "activate_imu_correction": false,
+
+    "rls_forgeting_factor":0.9,
+    "activate_idw":true,
+    "idw_power":2.0,
 
 
     "w_k":1.0,

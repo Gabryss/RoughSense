@@ -42,15 +42,15 @@ class RansacAlgorithm
         // ===========================
         // Methods
         // ===========================
-        void FitPlane(int t, vector<pcl::PointXYZI>& data, vector<double>& bestFit);
+        void FitPlane(int t, vector<pcl::PointXYZ>& data, vector<double>& bestFit);
         void ResetState();
 
     protected:
         // ===========================
         // Methods
         // ===========================
-        vector<double> PlaneEquation(const pcl::PointXYZI& p1, const pcl::PointXYZI& p2, const pcl::PointXYZI& p3);
-        double CalculateDistanceFromPlane(const pcl::PointXYZI& points, const vector<double>& plane_eq);
-        int CountInliers(vector<pcl::PointXYZI>& data, vector<double>& plane_eq, int t);
+        vector<double> PlaneEquation(const pcl::PointXYZ& p1, const pcl::PointXYZ& p2, const pcl::PointXYZ& p3);
+        double CalculateDistanceFromPlane(const pcl::PointXYZ& points, const vector<double>& plane_eq);
+        int CountInliers(vector<pcl::PointXYZ>& data, vector<double>& plane_eq, int t);
         
 };

@@ -128,12 +128,92 @@ void Dsp::generate_simulated_signal()
     // Generate the sinusoid.
     for (int n = 0; n < N; ++n) {
         double t = n / fs; // Current time in seconds.
-        double sample = a1 * std::sin(2 * M_PI * f1 * t) +
-                        a2 * std::sin(2 * M_PI * f2 * t) +
-                        a3 * std::sin(2 * M_PI * f3 * t) +
-                        a4 * std::sin(2 * M_PI * f4 * t) +
-                        a5 * std::sin(2 * M_PI * f5 * t)
+        double sample = a1 * sin(2 * M_PI * f1 * t) +
+                        a2 * sin(2 * M_PI * f2 * t) +
+                        a3 * sin(2 * M_PI * f3 * t) +
+                        a4 * sin(2 * M_PI * f4 * t) +
+                        a5 * sin(2 * M_PI * f5 * t)
                         ;
         sinusoid.push_back(sample);
     }
+};
+
+
+// Recursive Least Square algorithm
+void Dsp::initialize_rls()
+{
+    // Initialize theta (two parameters: bias and slope)
+    theta = Eigen::VectorXd(2);
+    theta << 0.0, 1.0; // Start with identity mapping
+
+    // Initialize covariance matrix with high values
+    P = Eigen::MatrixXd::Identity(2, 2) * 1e3;
+};
+
+
+
+// Update RLS with a new observation (point cloud roughness -> IMU roughness)
+void Dsp::rls_update(double predicted_roughness, double roughness_observed) {
+    Eigen::VectorXd phi(2);
+    phi << predicted_roughness, 1; // [point cloud roughness, Bias term]
+
+    // Compute Kalman gain
+    Eigen::MatrixXd K = P * phi / (lambda + phi.transpose() * P * phi);
+
+    // Update parameters
+    theta = theta + K * (roughness_observed - phi.transpose() * theta);
+
+    // Update covariance matrix
+    P = (P - K * phi.transpose() * P) / lambda;
+
+    std::cout << "Updated Model: theta_0 = " << theta(0) << ", theta_1 = " << theta(1) << std::endl;
+};
+
+
+double Dsp::rls_correction(double predicted_roughness)
+{
+    return theta(0) * predicted_roughness + theta(1) ; // alpha * Rpc + beta
+};
+
+
+
+// IDW Interpolation function
+double Dsp::idw_interpolation(const vector<Cell>& observed_cells, double x, double y, double predicted_roughness) 
+{
+    double numerator = 0.0;
+    double denominator = 0.0;
+    double eps = 1e-9; // Small value to avoid division by zero
+
+    for (const auto& cell : observed_cells) {
+        double dist = distance(cell, {x, y, 0.0});
+        
+        // If the query point coincides with a known point, return its value
+        if (dist < eps) {
+            return cell.roughness_corrected;
+        }
+
+        // Compute the correction for this cell
+        double delta = cell.roughness_corrected - cell.pred_norm;
+
+        double weight = 1.0 / pow(dist, idw_power);
+        numerator += weight * delta;
+        denominator += weight;
+    }
+
+    // If denominator is zero (should not occur if there are no observations), return the predicted value.
+    if (denominator == 0.0) {
+        return predicted_roughness;
+    }
+
+    // Interpolated correction for cell (x, y)
+    double interpolatedCorrection = numerator / denominator;
+
+    // Updated roughness is the predicted roughness plus the interpolated correction.
+    return predicted_roughness + interpolatedCorrection;
+};
+
+
+// Function to compute Euclidean distance
+double Dsp::distance(const Cell& a, const Cell& b) {
+    return sqrt((a.local_x - b.local_x) * (a.local_x - b.local_x) + (a.local_y - b.local_y) * (a.local_y - b.local_y));
 };

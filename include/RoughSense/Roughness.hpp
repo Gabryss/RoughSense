@@ -49,19 +49,21 @@ class Roughness
         // ===========================
         // Traversability grids
         TerrainGrid TGridLocal; //Grid of std_deviation, slope and gradient for each cell - Local
-        DynamicGlobalGrid globalGrid; // Global traversability grid
         
         // Point cloud grids
-        vector<vector<vector<pcl::PointXYZI>>> PCGrid; //Grid with cells filled with points from the PC
-        vector<vector<vector<pcl::PointXYZI>>> PCLowGrid; //Grid with cells filled with points from the PC
+        vector<vector<vector<pcl::PointXYZ>>> PCGrid; //Grid with cells filled with points from the PC
+        vector<vector<vector<pcl::PointXYZ>>> PCLowGrid; //Grid with cells filled with points from the PC
         
 
         vector<float> imu_data;
         vector<double> pose = {0.0,0.0,0.0};
-        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud;
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
         float resolution;
         int low_grid_resolution=4;
         float local_size;
+        float global_size;
+        int nb_cells_global;
+
         float roughness_shift=0;
         float height=1;
         float min_height=0;
@@ -86,32 +88,30 @@ class Roughness
         double roughness_normalization(double value, float threshold);
         double calculateNorm(double linear_accel_x, double linear_accel_y, double linear_accel_z);
 
-        //Main method
-        void CalculatePCRoughness(pcl::PointCloud<pcl::PointXYZI>::Ptr Data_in);
-        
-        void FillTGridGlobal(float x_pose, float y_pose);
-        
+        //Main methods
+        void CalculatePCRoughness(pcl::PointCloud<pcl::PointXYZ>::Ptr Data_in);
+        void CalculateObservedRoughness(vector<double> observed_values, vector<int> previous_cell_coordinates);
+
         void DisplayGrid(); //For debug purposes
-        void TestGrid();
-        void saveEntireGridToPCD(const vector<vector<vector<pcl::PointXYZI>>>& PC_Grid);
+        void saveEntireGridToPCD(const vector<vector<vector<pcl::PointXYZ>>>& PC_Grid);
 
         
     protected:
         // ===========================
         // Attributes
         // ===========================
-        pcl::PointCloud<pcl::PointXYZI>::Ptr Data_in;
+        pcl::PointCloud<pcl::PointXYZ>::Ptr Data_in;
         float LETHAL = 100.0;
 
         // ===========================
         // Methods
         // ===========================
         void ImportPCD(string path);
-        void CreateTGridLocal(int nb_cells);
-        void CreatePCGrid(int nb_cells);
+        void CreateTGridLocal();
+        void CreatePCGrid();
         void FillPCGrid();
         void FillTGridLocal();
-        void saveCellToPCD(const vector<vector<vector<pcl::PointXYZI>>>& PCGrid, size_t indx, size_t indy);
+        void saveCellToPCD(const vector<vector<vector<pcl::PointXYZ>>>& PCGrid, size_t indx, size_t indy);
 
 
 };

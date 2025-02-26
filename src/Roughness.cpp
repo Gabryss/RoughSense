@@ -14,30 +14,38 @@
 
 
 // =====================================================
-// Main point cloud function
+// Main point cloud roughness calculation
 // =====================================================
-void Roughness::CalculatePCRoughness(pcl::PointCloud<pcl::PointXYZI>::Ptr Data_in)
+void Roughness::CalculatePCRoughness(pcl::PointCloud<pcl::PointXYZ>::Ptr Data_in)
 // Core method that call the other methods to calculate the point cloud roughness
 {
-    nb_cells = static_cast<unsigned int>(local_size/resolution);
-
     cloud = Data_in;
-    
-    CreatePCGrid(nb_cells);
-    CreateTGridLocal(nb_cells);
+    CreatePCGrid();
+    CreateTGridLocal();
     FillPCGrid();
     FillTGridLocal();
-    // image_local_roughness = map_creator.MakeMap(TGridLocal, 0);
 };
 
 
+
+// =====================================================
+// Main observed (IMU) roughness calculation
+// =====================================================
+void Roughness::CalculateObservedRoughness(vector<double> observed_values, vector<int> previous_cell_coordinates)
+{
+    double roughness_imu = CalculateStd(observed_values);
+    double roughness_imu_normalized = roughness_normalization(roughness_imu, roughness_imu_threshold);
+
+    TGridLocal[previous_cell_coordinates[0]][previous_cell_coordinates[1]][2] = roughness_imu;
+    TGridLocal[previous_cell_coordinates[0]][previous_cell_coordinates[1]][3] = roughness_imu_normalized;
+};
 
 
 // =====================================================
 // Process grids
 // =====================================================
 
-void Roughness::CreateTGridLocal(int nb_cells)
+void Roughness::CreateTGridLocal()
 // Create the Roughness grid size nb_cells
 {
     TGridLocal.clear();
@@ -47,13 +55,13 @@ void Roughness::CreateTGridLocal(int nb_cells)
         TGridLocal[ind_x].resize(nb_cells);
         for(int ind_y=0; ind_y<nb_cells; ind_y++)
         {
-            TGridLocal[ind_x][ind_y].resize(3);
+            TGridLocal[ind_x][ind_y].resize(9);
         }
     }
 };
 
 
-void Roughness::CreatePCGrid(int nb_cells)
+void Roughness::CreatePCGrid()
 {
     PCGrid.clear();
     // Initialize the point cloud grid to the right size
@@ -82,14 +90,26 @@ void Roughness::FillPCGrid()
 {
     //Fill each cell with the coresponding point from the input point cloud
     //All the points outside the map are discarded
-    int local_center = local_size/2;
+    float local_center = local_size/2;
+    float lower_limit_x = pose[0]-local_center;
+    float upper_limit_x = pose[0]+local_center;
+
+    float lower_limit_y = pose[1]-local_center;
+    float upper_limit_y = pose[1]+local_center;
+
+    float upper_limit_z = height+pose[2];
+
+
+
+
+
+    // Loop over the PC
     for(unsigned int i = 0; i < cloud->points.size(); i++)
     {
-        if(((pose[0]-local_center) < cloud->points[i].x) && (cloud->points[i].x < (pose[0]+local_center)) && ((pose[1]-local_center) < cloud->points[i].y) && (cloud->points[i].y < (pose[1]+local_center)) && ( cloud->points[i].z < (height+pose[2])))
+        if((lower_limit_x < cloud->points[i].x) && (cloud->points[i].x < upper_limit_x) && (lower_limit_y < cloud->points[i].y) && (cloud->points[i].y < (upper_limit_y) && ( cloud->points[i].z < upper_limit_z)))
         {
-            unsigned int indx = static_cast<unsigned int>((cloud->points[i].x - (pose[0]-local_center)) / (local_size) * (local_size / resolution));
-            unsigned int indy = static_cast<unsigned int>((cloud->points[i].y - (pose[1]-local_center)) / (local_size) * (local_size / resolution));
-
+            unsigned int indx = static_cast<unsigned int>((cloud->points[i].x - (pose[0]-local_center)) / resolution);
+            unsigned int indy = static_cast<unsigned int>((cloud->points[i].y - (pose[1]-local_center)) / resolution);
 
             // Edge case for odd numbers
             if(indx == nb_cells)
@@ -102,6 +122,7 @@ void Roughness::FillPCGrid()
             }
 
             PCGrid[indx][indy].push_back(cloud->points[i]);
+            
 
             // Low resolution grid
             int indx_low = indx / low_grid_resolution;
@@ -152,6 +173,7 @@ void Roughness::FillTGridLocal()
                 ind_y_low = nb_low_cells - 1;
             }
             
+
             // Enough points in the cell to fit a plane
             if(PCGrid[ind_x][ind_y].size()>3)
             {
@@ -159,8 +181,8 @@ void Roughness::FillTGridLocal()
                 double std = CalculateStd(ransac.distances);
                 
                 // Roughness grid
-                // TGridLocal[ind_x][ind_y][0] = roughness_normalization(std, roughness_lidar_threshold);
                 TGridLocal[ind_x][ind_y][0] = std;
+                TGridLocal[ind_x][ind_y][1] = roughness_normalization(std, roughness_lidar_threshold);
             }
 
             // Rough estimation based on the neighbors cells
@@ -170,38 +192,15 @@ void Roughness::FillTGridLocal()
                 double std = CalculateStd(ransac.distances);
                 
                 // Roughness grid
-                // TGridLocal[ind_x][ind_y][0] = roughness_normalization(std, roughness_lidar_threshold);
                 TGridLocal[ind_x][ind_y][0] = std;
+                TGridLocal[ind_x][ind_y][1] = roughness_normalization(std, roughness_lidar_threshold);
+
             }
 
             // No data result to unknown terrain
-            else
-            {
-                if(!stylized)
-                {
-                    TGridLocal[0][0][0] = 1.01;
-                }
-            }
         }
     }
 };
-
-
-
-void Roughness::FillTGridGlobal(float x_pose, float y_pose)
-{
-    // int x = static_cast<int>(x_pose);
-    // int y = static_cast<int>(y_pose);
-
-    int x = static_cast<int>((x_pose*100)/globalGrid.resolution);
-    int y = static_cast<int>((y_pose*100)/globalGrid.resolution);
-
-
-
-    globalGrid.placeLocalGrid(TGridLocal, x, y);
-    image_global_roughness = map_creator.MakeMap(globalGrid.grid, 0);
-}
-
 
 
 // =====================================================
@@ -235,7 +234,7 @@ double Roughness::CalculateStd(vector<double>& distances)
 
 // Function to calculate the norm of a 3D vector
 double Roughness::calculateNorm(double linear_accel_x, double linear_accel_y, double linear_accel_z) {
-    return std::sqrt(linear_accel_x * linear_accel_x +
+    return sqrt(linear_accel_x * linear_accel_x +
                      linear_accel_y * linear_accel_y +
                      linear_accel_z * linear_accel_z);
 };
@@ -245,7 +244,7 @@ double Roughness::calculateNorm(double linear_accel_x, double linear_accel_y, do
 double Roughness::roughness_normalization(double value, float threshold)
 {
     if (threshold == 0) return 0.0; // Prevent division by zero
-    return std::clamp(value / threshold, 0.0, 1.0);
+    return clamp(value / threshold, 0.0, 1.0);
 };
 
 
@@ -269,11 +268,11 @@ void Roughness::DisplayGrid()
 void Roughness::ImportPCD(string path)
 // Takes absolute path as an input, import a .pcd file and transform it into a PCL object
 {
-    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_in (new pcl::PointCloud<pcl::PointXYZI>);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in (new pcl::PointCloud<pcl::PointXYZ>);
 
     cout<<"PCD path: "<<path<<endl;
 
-    if (pcl::io::loadPCDFile<pcl::PointXYZI> (path, *cloud_in) == -1) //* load the file
+    if (pcl::io::loadPCDFile<pcl::PointXYZ> (path, *cloud_in) == -1) //* load the file
     {
         cout<<"Couldn't read file test_pcd.pcd"<<endl;
     }
@@ -283,86 +282,21 @@ void Roughness::ImportPCD(string path)
 
 
 
-void Roughness::TestGrid()
-{
-    // Example 1: Place a local grid with positive offset.
-    // Each cell is a vector<double> of size 3.
-    TerrainGrid localGrid1 = {
-        { {1.0, 1.1, 1.2}, {2.0, 2.1, 2.2} },
-        { {3.0, 3.1, 3.2}, {4.0, 4.1, 4.2} }
-    };
-    // Place localGrid1 at world coordinate (0, 0)
-    globalGrid.placeLocalGrid(localGrid1, 0, 0);
-    std::cout << "After placing localGrid1 at (0,0):\n";
-    globalGrid.print();
-
-    // Example 2: Place another local grid with negative offset.
-    TerrainGrid localGrid2 = {
-        { {9.0, 9.1, 9.2} }
-    };
-    // Place localGrid2 at world coordinate (-1, -1)
-    globalGrid.placeLocalGrid(localGrid2, -1, -1);
-    std::cout << "After placing localGrid2 at (-1,-1):\n";
-    globalGrid.print();
-
-    // Example 3: Place a third local grid at a different position.
-    TerrainGrid localGrid3 = {
-        { {7.0, 7.1, 7.2}, {8.0, 8.1, 8.2} }
-    };
-    // Place localGrid3 at world coordinate (2, -2)
-    globalGrid.placeLocalGrid(localGrid3, 2, -2);
-    std::cout << "After placing localGrid3 at (2,-2):\n";
-    globalGrid.print();
-
-    return;
-};
-
-
-
-// void Roughness::SaveLocalGridState()
-// {
-    
-//     if (PCGrid.empty()) {
-//         cerr << "The local grid is not initialized " << endl;
-//         return;
-//     }
-
-//     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZI>);
-    
-//     for (size_t indz = 0; indz < PCGrid[indx][indy].size(); ++indz) 
-//     {
-//         cloud->points.push_back(PCGrid[indx][indy][indz]);
-//     }
-    
-//     cloud->width = cloud->points.size();
-//     cloud->height = 1;
-//     cloud->is_dense = true;
-    
-//     stringstream filename;
-//     filename << "data/pc_cells/cell_" << indx << "_" << indy << ".pcd";
-    
-//     if (pcl::io::savePCDFileASCII(filename.str(), *cloud) == -1) {
-//         PCL_ERROR("Could not write PCD file.\n");
-//     } else {
-//         cout << "Saved cell data to " << filename.str() << endl;
-//     }
-// };
 
 
 
 
-void Roughness::saveCellToPCD(const vector<vector<vector<pcl::PointXYZI>>>& PCGrid, size_t indx, size_t indy) {
+void Roughness::saveCellToPCD(const vector<vector<vector<pcl::PointXYZ>>>& PCGrid, size_t indx, size_t indy) {
     if (indx >= PCGrid.size() || indy >= PCGrid[indx].size()) {
         cerr << "Invalid indices for X and Y dimensions." << endl;
         return;
     }
 
     if (PCGrid[indx][indy].empty()) {
-        cerr << "No points available in the selected cell (" << indx << ", " << indy << ")." << endl;
         return;
     }
 
-    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZI>);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
 
     for (const auto& point : PCGrid[indx][indy]) 
     {
@@ -384,7 +318,7 @@ void Roughness::saveCellToPCD(const vector<vector<vector<pcl::PointXYZI>>>& PCGr
     }
 };
 
-void Roughness::saveEntireGridToPCD(const vector<vector<vector<pcl::PointXYZI>>>& PC_Grid) 
+void Roughness::saveEntireGridToPCD(const vector<vector<vector<pcl::PointXYZ>>>& PC_Grid) 
 {
     vector<double> size_point_cloud;
     vector<double> vector_std;
