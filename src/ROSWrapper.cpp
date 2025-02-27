@@ -79,7 +79,7 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     );
 
     timer_roughness_ = this->create_wall_timer(
-      std::chrono::milliseconds(200),  // Call every 200 ms
+      std::chrono::milliseconds(1000),  // Call every 200 ms
       std::bind(&ROSWrapper::compute_roughness, this)
     );
 
@@ -156,6 +156,7 @@ ROSWrapper::~ROSWrapper()
     save_filtered_data();
     save_roughness_data();
     save_timers_data();
+    // save_global_map();
   }
 };
 
@@ -409,6 +410,10 @@ void ROSWrapper::compute_roughness()
       changed_cell = false;
       vector_observed_cells.push_back(current_cell_struct);
       vector_times.push_back(timer_chrono);
+
+      save_global_map();
+      
+      // vector_global_maps.push_back(global_grid);
   }
 };
 
@@ -656,6 +661,55 @@ void ROSWrapper::save_timers_data()
 };
 
 
+
+void ROSWrapper::save_global_map()
+{
+  string filename_root = "data/global_maps/global_map_";
+
+  string filename = filename_root + to_string(id_global_map) + ".csv";
+  ofstream file(filename);
+  
+  if (!file.is_open()) {
+      cerr << "Error: Could not open file " << filename << endl;
+      return;
+  }
+
+  int rows = global_grid.size();
+  int cols = global_grid[0].size();
+  int layers = global_grid[0][0].size();
+
+
+  // Write header
+  file << "Row,Col";
+  for (int l = 0; l < layers; ++l) {
+      file << ",Layer_" << l;
+  }
+  file << "\n";
+
+  // Write global_grid data
+  for (int r = 0; r < rows; ++r) {
+      for (int c = 0; c < cols; ++c) {
+        if ((global_grid[r][c][0]==0) && (global_grid[r][c][1]==0) && (global_grid[r][c][2]==0) && (global_grid[r][c][3]==0) && (global_grid[r][c][4]==0) && (global_grid[r][c][5]==0) && (global_grid[r][c][6]==0) && (global_grid[r][c][7]==0) && (global_grid[r][c][8]==0))
+              {
+                continue;
+              }
+        else
+        {
+          file << r << "," << c;  // Row and Column indices
+          for (int l = 0; l < layers; ++l) {
+              file << "," << global_grid[r][c][l];  // Values from all layers
+          }
+          file << "\n";
+        }
+      }
+  }
+
+  file.close();
+  RCLCPP_INFO(this->get_logger(), "Grid saved as %s", filename.c_str());
+  id_global_map +=1;
+};
+
+
 // Convert a deque of double into a vector of double
 vector<double> ROSWrapper::convert_deque_vector(deque<double> input)
 {
@@ -723,6 +777,10 @@ void ROSWrapper::update_global_map(coordinates_grid offset)
           // roughness.SaveCellASPC(local_ind_x, local_ind_y, vector_roughness_lidar_raw.size());
         // }
       }
+
+      // global_grid[global_coord[0]][global_coord[1]] = roughness.TGridLocal[local_ind_x][local_ind_y];
+          //Save current cell
+          // roughness.SaveCellASPC(local_ind_x, local_ind_y, vector_roughness_lidar_raw.size());
     }
   }
 };

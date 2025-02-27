@@ -106,6 +106,8 @@ class ROSWrapper : public rclcpp::Node
 
         vector<Cell> vector_observed_cells;
         vector<timer_struct> vector_times;
+        vector<TerrainGrid> vector_global_maps;
+
 
         
 
@@ -143,6 +145,7 @@ class ROSWrapper : public rclcpp::Node
         void save_filtered_data();
         void save_roughness_data();
         void save_timers_data();
+        void save_global_map();
 
 
         void compute_roughness();
@@ -211,6 +214,7 @@ class ROSWrapper : public rclcpp::Node
         float LETHAL = 100.0;
         bool imu_correction;
         bool use_idw;
+        int id_global_map = 0;
         
         // ===========================
         // Methods

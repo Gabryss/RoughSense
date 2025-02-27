@@ -32,7 +32,7 @@
     "activate_imu_correction": false,
 
     "rls_forgeting_factor":0.9,
-    "activate_idw":true,
+    "activate_idw":false,
     "idw_power":2.0,
 
 
