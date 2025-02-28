@@ -9,7 +9,7 @@
     "height":1,
 
     "map_resolution":0.25,
-    "local_map_size":5,
+    "local_map_size":40,
     "global_map_size":100,
     "map_unknown_transparency":false,
     "map_low_resolution_division_factor":1,

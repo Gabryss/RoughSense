@@ -67,9 +67,9 @@ using coordinates = vector<double>;
 
 using coordinates_grid = vector<int>;
 
-// Used for IDW
+// Used to monitor time
 struct timer_struct {
-    long unsigned int pc_roughness_timer, save_entire_pc_timer, calculating_coordonates_timer, speed_normalization_timer, calculate_observed_roughness_timer, rls_update_timer, rls_correction_timer, idw_interpolation_timer, update_global_map_timer, publish_maps_timer;
+    long long pc_roughness_timer, save_entire_pc_timer, calculating_coordonates_timer, speed_normalization_timer, calculate_observed_roughness_timer, rls_update_timer, rls_correction_timer, idw_interpolation_timer, update_global_map_timer, publish_maps_timer;
 };
 
 

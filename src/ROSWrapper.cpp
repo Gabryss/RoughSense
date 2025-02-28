@@ -261,70 +261,59 @@ void ROSWrapper::compute_roughness()
   {
       timer_struct timer_chrono;
 
-      auto start = std::chrono::high_resolution_clock::now();
+      rclcpp::Time start = this->get_clock()->now();
       roughness.CalculatePCRoughness(cloud);
-      auto end = std::chrono::high_resolution_clock::now();
-      long long duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      rclcpp::Time end = this->get_clock()->now();
+      long long duration = (end - start).nanoseconds();
       timer_chrono.pc_roughness_timer = duration;
-      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
-      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
       duration = 0;
 
-      start = std::chrono::high_resolution_clock::now();
+      start = this->get_clock()->now();
       roughness.saveEntireGridToPCD(roughness.PCGrid);
-      end = std::chrono::high_resolution_clock::now();
-      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      end = this->get_clock()->now();
+      duration = (end - start).nanoseconds();
       timer_chrono.save_entire_pc_timer = duration;
-      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
-      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
       duration = 0;
 
 
 
-      start = std::chrono::high_resolution_clock::now();
+      start = this->get_clock()->now();
       coordinates_grid local_coordinates = coord_global_to_local(previous_cell);
-      end = std::chrono::high_resolution_clock::now();
-      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      end = this->get_clock()->now();
+      duration = (end - start).nanoseconds();
       timer_chrono.calculating_coordonates_timer = duration;
-      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
-      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
       duration = 0;
 
       // Calculate the IMU roughness
-      start = std::chrono::high_resolution_clock::now();
+      start = this->get_clock()->now();
       vector<double> observed_values_speed_normalized = speed_normalization(observed_data_filtered);
-      end = std::chrono::high_resolution_clock::now();
-      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      end = this->get_clock()->now();
+      duration = (end - start).nanoseconds();
       timer_chrono.speed_normalization_timer = duration;
-      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
-      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
       duration = 0;
 
 
-      start = std::chrono::high_resolution_clock::now();
+      start = this->get_clock()->now();
       roughness.CalculateObservedRoughness(observed_values_speed_normalized, local_coordinates);
       observed_data_filtered.clear();
-      end = std::chrono::high_resolution_clock::now();
-      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      end = this->get_clock()->now();
+      duration = (end - start).nanoseconds();
       timer_chrono.calculate_observed_roughness_timer = duration;
-      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
-      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
       duration = 0;
       
       
-      start = std::chrono::high_resolution_clock::now();
+      start = this->get_clock()->now();
       DSP_->rls_update(roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][1], roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][3]);
       roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][4] =  DSP_->theta[0];
       roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][5] =  DSP_->theta[1];
-      end = std::chrono::high_resolution_clock::now();
-      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      end = this->get_clock()->now();
+      duration = (end - start).nanoseconds();
       timer_chrono.rls_update_timer = duration;
-      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
-      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
       duration = 0;
 
-      start = std::chrono::high_resolution_clock::now();
       // RLS
+      rclcpp::Time start_rls = this->get_clock()->now();
+
       for (int i = 0; i < roughness.TGridLocal.size(); i++)
       {
         for (int j = 0; j < roughness.TGridLocal.size(); j++)
@@ -333,12 +322,12 @@ void ROSWrapper::compute_roughness()
           roughness.TGridLocal[i][j][6] = roughness.roughness_normalization(roughness_corrected, 1);
         }
       }
-      end = std::chrono::high_resolution_clock::now();
-      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-      timer_chrono.rls_update_timer = duration;
-      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
-      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
+      rclcpp::Time end_rls = this->get_clock()->now();
+      duration = (end_rls - start_rls).nanoseconds();
+      timer_chrono.rls_correction_timer = duration;
       duration = 0;
+
+      
 
       Cell current_cell_struct;
       current_cell_struct.local_x = local_coordinates[0];
@@ -355,7 +344,7 @@ void ROSWrapper::compute_roughness()
       current_cell_struct.roughness_corrected = roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][6];
 
 
-      start = std::chrono::high_resolution_clock::now();
+      start = this->get_clock()->now();
       // IDW
       if (use_idw)
       {
@@ -377,11 +366,9 @@ void ROSWrapper::compute_roughness()
           }
         }
       }
-      end = std::chrono::high_resolution_clock::now();
-      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      end = this->get_clock()->now();
+      duration = (end - start).nanoseconds();
       timer_chrono.idw_interpolation_timer = duration;
-      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
-      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
       duration = 0;
 
       current_cell_struct.delta_idw = roughness.TGridLocal[local_coordinates[0]][local_coordinates[1]][7];
@@ -389,22 +376,20 @@ void ROSWrapper::compute_roughness()
 
 
 
-      start = std::chrono::high_resolution_clock::now();
+      start = this->get_clock()->now();
       update_global_map(current_cell);
-      end = std::chrono::high_resolution_clock::now();
-      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      end = this->get_clock()->now();
+      duration = (end - start).nanoseconds();
       timer_chrono.update_global_map_timer = duration;
-      start = std::chrono::time_point<std::chrono::high_resolution_clock>{};
-      end = std::chrono::time_point<std::chrono::high_resolution_clock>{};
       duration = 0;
 
 
       // Publish maps
-      start = std::chrono::high_resolution_clock::now();
+      start = this->get_clock()->now();
       publish_roughness_map(roughness.TGridLocal, true);  // Local map
       publish_roughness_map(global_grid, false);          // Global map
-      end = std::chrono::high_resolution_clock::now();
-      duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+      end = this->get_clock()->now();
+      duration = (end - start).nanoseconds();
       timer_chrono.publish_maps_timer = duration;
 
       changed_cell = false;
