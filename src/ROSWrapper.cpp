@@ -454,7 +454,7 @@ void ROSWrapper::publish_roughness_map(const TerrainGrid &grid, bool is_local)
       for (unsigned int x = 0; x < map_meta_data.width; ++x) 
       {
         unsigned int index = y * map_meta_data.width + x;
-        occupancy_grid.data[index] = grid[x][y][8]*100;                    // Fill data
+        occupancy_grid.data[index] = grid[x][y][1]*100;                    // Fill data
       }
     }
 
@@ -757,7 +757,23 @@ void ROSWrapper::update_global_map(coordinates_grid offset)
 
       if (roughness.TGridLocal[local_ind_x][local_ind_y][0]>0) // Only takes the computed values
       {
-        global_grid[global_coord[0]][global_coord[1]] = roughness.TGridLocal[local_ind_x][local_ind_y];
+        for (int i=0; i<9; i++)
+        {
+          if ((i!=2) && (i!=3) && (i!=4) && (i!=5) && (i!=7))
+          {
+            global_grid[global_coord[0]][global_coord[1]][i] = roughness.TGridLocal[local_ind_x][local_ind_y][i];
+          }
+          else
+          {
+            coordinates_grid index_pose = coord_local_to_global({local_ind_x, local_ind_y});
+            if((index_pose[0] == previous_cell[0]) && (index_pose[1] == previous_cell[1]))
+            {
+              global_grid[previous_cell[0]][previous_cell[1]][i] = roughness.TGridLocal[local_ind_x][local_ind_y][i];
+            }
+          }
+        }
+          
+
           //Save current cell
           // roughness.SaveCellASPC(local_ind_x, local_ind_y, vector_roughness_lidar_raw.size());
         // }
