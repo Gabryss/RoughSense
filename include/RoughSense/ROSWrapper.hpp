@@ -120,18 +120,10 @@ class ROSWrapper : public rclcpp::Node
         int nb_cells_local;
         int nb_cells_global;
         int offset_static = 0;
-
-
-        // Weight
-        double w_k = 1.0;               // Initial weight estimate
-        double alpha_0 = 0.1;           // Initial learning rate
-        double lambda_decay = 0.02;     // Controls decay rate
-        double beta = 0.9;              // Smoothing factor for error tracking
-        double error_moving_avg = 0;    // Track error trend
-
-
-        // Create Random Forest model
-        Ptr<RTrees> rf = RTrees::create();
+        float roughness_frequency;
+        float tf_frequency;
+        int roughness_frequency_int;
+        int tf_frequency_int;
 
 
         // ===========================

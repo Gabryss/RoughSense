@@ -31,13 +31,11 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     local_map_size = p["local_map_size"].GetFloat();
     global_map_size = p["global_map_size"].GetFloat();
 
+    tf_frequency = p["tf_frequency"].GetFloat();
+    tf_frequency_int = tf_frequency*1000;
 
-    w_k = p["w_k"].GetFloat();
-    alpha_0 = p["alpha_0"].GetFloat();
-    lambda_decay = p["lambda_decay"].GetFloat();
-    beta = p["beta"].GetFloat();
-    error_moving_avg = p["error_moving_avg"].GetFloat();
-
+    roughness_frequency = p["roughness_frequency"].GetFloat();
+    roughness_frequency_int = roughness_frequency*1000;
 
     // Local and global intialization
     nb_cells_local = static_cast<unsigned int>(local_map_size/resolution);
@@ -74,12 +72,12 @@ ROSWrapper::ROSWrapper(): Node("roughness_node")
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     timer_tf_ = this->create_wall_timer(
-      std::chrono::milliseconds(100),  // Call every 100 ms
+      std::chrono::milliseconds(tf_frequency_int),  // Call every time t (in ms)
       std::bind(&ROSWrapper::lookupTransform, this)
     );
 
     timer_roughness_ = this->create_wall_timer(
-      std::chrono::milliseconds(1000),  // Call every 200 ms
+      std::chrono::milliseconds(roughness_frequency_int),  // Call every time t (in ms)
       std::bind(&ROSWrapper::compute_roughness, this)
     );
 

@@ -1,6 +1,6 @@
 {
     "debug_info": false,
-    "save_data":true,
+    "save_data":false,
     "debug_time_s":5,
 
     "pc_topic": "/cloud_map",
@@ -35,10 +35,6 @@
     "activate_idw":false,
     "idw_power":2.0,
 
-
-    "w_k":1.0,
-    "alpha_0":0.1,
-    "lambda_decay":0.02,
-    "beta":0.9,
-    "error_moving_avg":0.0
+    "tf_frequency":0.1,
+    "roughness_frequency":1
 }
